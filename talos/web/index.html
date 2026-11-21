@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="en" data-theme="paper">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Talos</title>
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="256x256" href="/icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<style>
+:root{--bg:#f6f1e7;--panel:#efe8d9;--card:#fffdf8;--ink:#1d1b16;--soft:#6b6253;--line:#d9cfba;
+--teal:#1f6f5c;--amber:#b3740f;--red:#a8321f;--mono:ui-monospace,"Cascadia Mono",Consolas,monospace;
+--serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif}
+[data-theme=ink]{--bg:#171512;--panel:#1f1c18;--card:#24211c;--ink:#efe8d9;--soft:#a39a88;--line:#3a352c;
+--teal:#58c2a6;--amber:#e7a93b;--red:#ef7a64}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font:15px/1.5 "Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--ink);display:grid;
+grid-template-columns:272px 1fr;overflow:hidden}
+button,select,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer;border:1px solid var(--line);background:var(--card);border-radius:7px;padding:.38rem .75rem}
+button:hover{border-color:var(--soft)}
+button:focus-visible,select:focus-visible,textarea:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+button.main{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+button.quiet{border-color:transparent;background:none;color:var(--soft);padding:.3rem .5rem}
+button.quiet:hover{color:var(--ink)}
+aside{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.brand{display:flex;align-items:center;gap:.6rem;padding:1rem 1rem .6rem}
+.brand img{width:30px;height:30px}
+.brand b{font:600 1.35rem/1 var(--serif);letter-spacing:.01em}
+.brand small{color:var(--soft);display:block;font-size:.72rem;margin-top:.15rem}
+nav{display:flex;flex-wrap:wrap;gap:.15rem;padding:0 .7rem .6rem;border-bottom:1px solid var(--line)}
+nav button{border:none;background:none;padding:.3rem .55rem;border-radius:6px;color:var(--soft);font-size:.88rem}
+nav button[aria-current=true]{background:var(--card);color:var(--ink);box-shadow:inset 0 0 0 1px var(--line)}
+#new{margin:.7rem .8rem .4rem}
+#sessions{overflow:auto;flex:1;padding:0 .5rem .6rem}
+#sessions button{display:block;width:100%;text-align:left;border:none;background:none;border-radius:6px;padding:.42rem .55rem}
+#sessions button:hover{background:var(--card)}
+#sessions button[aria-current=true]{background:var(--card);box-shadow:inset 3px 0 0 var(--teal)}
+#sessions .t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+#sessions .m{font-size:.72rem;color:var(--soft)}
+.foot{padding:.5rem .8rem;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;font-size:.78rem;color:var(--soft)}
+main{display:flex;flex-direction:column;min-width:0;min-height:0}
+header{display:flex;gap:.6rem;align-items:center;padding:.6rem 1.2rem;border-bottom:1px solid var(--line);flex-wrap:wrap}
+header h1{font:600 1.05rem var(--serif);margin:0;flex:1;min-width:8rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+select,input[type=text]{background:var(--card);border:1px solid var(--line);border-radius:7px;padding:.34rem .5rem;max-width:15rem}
+label.f{font-size:.72rem;color:var(--soft);display:flex;flex-direction:column;gap:.1rem}
+#view{flex:1;overflow:auto;padding:1.2rem}
+.col{max-width:860px;margin:0 auto}
+.msg{margin:0 0 1rem}
+.msg .who{font-size:.68rem;letter-spacing:.09em;text-transform:uppercase;color:var(--soft);margin-bottom:.15rem}
+.msg.user .body{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:.6rem .8rem;white-space:pre-wrap;word-break:break-word}
+.msg.assistant .body{white-space:pre-wrap;word-break:break-word}
+.body pre{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:.6rem .7rem;overflow:auto;font:13px/1.45 var(--mono);white-space:pre}
+.body code{font:13px var(--mono);background:var(--panel);padding:.05rem .3rem;border-radius:4px}
+.body pre code{background:none;padding:0}
+details.tool{border-left:3px solid var(--line);margin:.25rem 0;padding:.1rem 0 .1rem .7rem;font:13px/1.45 var(--mono)}
+details.tool summary{cursor:pointer;color:var(--soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+details.tool summary b{color:var(--ink);font-weight:600}
+details.tool pre{margin:.3rem 0;white-space:pre-wrap;word-break:break-word;max-height:18rem;overflow:auto;color:var(--soft)}
+.note{font-size:.85rem;color:var(--amber);margin:.3rem 0}
+.proof{display:inline-block;margin:.2rem 0 1rem;font-size:.85rem;border:1px solid;border-radius:999px;padding:.12rem .7rem}
+.proof.checked{color:var(--teal)}.proof.failed{color:var(--red)}.proof.weak{color:var(--amber)}
+.ask{border:1px solid var(--amber);background:var(--card);border-radius:10px;padding:.7rem .9rem;margin:.6rem 0}
+.ask code{font:13px var(--mono);display:block;margin:.35rem 0;white-space:pre-wrap;word-break:break-word}
+.ask .row{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.4rem}
+form#composer{border-top:1px solid var(--line);padding:.8rem 1.2rem 1rem}
+form#composer .col{display:flex;gap:.6rem;align-items:flex-end}
+textarea{flex:1;resize:none;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:.6rem .75rem;min-height:2.9rem;max-height:14rem}
+.hint{max-width:860px;margin:.35rem auto 0;font-size:.75rem;color:var(--soft);display:flex;gap:.8rem;flex-wrap:wrap;align-items:center}
+.hello{margin:6vh auto 0;max-width:640px}
+.hello h2{font:600 2rem/1.15 var(--serif);margin:0 0 .5rem}
+.hello p{color:var(--soft);margin:.3rem 0 1rem}
+.hello .ex{display:grid;gap:.45rem}
+.hello .ex button{text-align:left;padding:.6rem .8rem}
+.status{font-size:.85rem;border:1px solid var(--line);border-radius:8px;padding:.5rem .7rem;margin:1rem 0;background:var(--card)}
+.status.bad{border-color:var(--red)}
+table{border-collapse:collapse;width:100%;font-size:.88rem}
+th,td{text-align:left;padding:.4rem .5rem;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--soft)}
+.pill{font-size:.72rem;border:1px solid;border-radius:999px;padding:0 .5rem;white-space:nowrap}
+.pill.native{color:var(--teal)}.pill.bridged,.pill.untested{color:var(--amber)}.pill.missing{color:var(--red)}
+h2.page{font:600 1.5rem var(--serif);margin:.2rem 0 .2rem}
+p.lead{color:var(--soft);margin:.1rem 0 1rem;max-width:44rem}
+.grid2{display:grid;gap:.5rem;grid-template-columns:10rem 1fr;align-items:center;max-width:40rem;margin:.6rem 0 1rem}
+.spin{display:inline-block;width:.7rem;height:.7rem;border:2px solid var(--line);border-top-color:var(--teal);border-radius:50%;animation:r 1s linear infinite;vertical-align:-1px}
+@keyframes r{to{transform:rotate(1turn)}}
+@media (prefers-reduced-motion:reduce){.spin{animation:none}}
+@media (max-width:760px){body{grid-template-columns:1fr}aside{display:none}}
+</style>
+</head>
+<body>
+<aside>
+  <div class="brand"><img src="/icon.svg" alt=""><div><b>Talos</b><small id="version"></small></div></div>
+  <nav aria-label="Pages">
+    <button data-page="chat" aria-current="true">Chat</button><button data-page="skills">Skills</button>
+    <button data-page="memory">Memory</button><button data-page="knowledge">Knowledge</button><button data-page="schedule">Schedule</button>
+    <button data-page="parity">Features</button><button data-page="checkup">Check-up</button>
+  </nav>
+  <button id="new" class="main">New chat</button>
+  <div id="sessions" aria-label="Past chats"></div>
+  <div class="foot"><span id="foot"></span><button class="quiet" id="theme" title="Switch light / dark">Light / dark</button></div>
+</aside>
+<main>
+  <header>
+    <h1 id="title">New chat</h1>
+    <label class="f">Folder<input type="text" id="cwd" spellcheck="false" title="The project folder the agent works in"></label>
+    <label class="f">Agent<select id="agent"></select></label>
+    <label class="f">Model<select id="model"></select></label>
+  </header>
+  <div id="view"><div class="col" id="stream"></div></div>
+  <form id="composer">
+    <div class="col">
+      <textarea id="text" rows="1" placeholder="Describe the task. Enter sends, Shift+Enter makes a new line." aria-label="Message"></textarea>
+      <button class="main" id="send">Send</button>
+      <button type="button" id="stop" hidden>Stop</button>
+    </div>
+    <div class="hint"><span id="state">Ready</span>
+      <button type="button" class="quiet" id="undo" title="Take back the last turn and restore the files it changed">Undo</button>
+      <button type="button" class="quiet" id="redo">Redo</button>
+      <button type="button" class="quiet" id="compact" title="Summarise a long chat so it fits the model">Shorten</button>
+      <button type="button" class="quiet" id="share" title="Open this chat as one page you can save or send">Share</button>
+      <button type="button" class="quiet" id="remove">Delete</button></div>
+  </form>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const api = async (path, body, method) => {
+  const response = await fetch('/api/' + path, body === undefined && !method ? {} :
+    {method: method || 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body || {})});
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
+  return data;
+};
+const el = (tag, cls, text) => { const node = document.createElement(tag); if (cls) node.className = cls;
+  if (text !== undefined) node.textContent = text; return node; };
+const esc = (text) => text.replace(/[&<>]/g, (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;'}[c]));
+function rich(text) {            // tiny Markdown: code fences, inline code, bold
+  return esc(text).split(/```/).map((part, index) => index % 2
+    ? '<pre><code>' + part.replace(/^[\w+-]*\n/, '') + '</code></pre>'
+    : part.replace(/`([^`\n]+)`/g, '<code>$1</code>').replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')).join('');
+}
+let state = {}, current = '', source = null, page = 'chat', live = null, liveText = '';
+const stream = $('stream');
+
+function bottom() { $('view').scrollTop = $('view').scrollHeight; }
+function message(role, text) {
+  const box = el('div', 'msg ' + role);
+  box.append(el('div', 'who', role === 'user' ? 'You' : 'Talos'));
+  const body = el('div', 'body'); body.innerHTML = rich(text || ''); box.append(body);
+  stream.append(box); return body;
+}
+function toolCard(name, args) {
+  const card = el('details', 'tool'), summary = el('summary');
+  const target = args.command || args.filePath || args.pattern || args.url || args.query || args.name || args.description || args.prompt || '';
+  summary.append(el('b', '', name), ' ' + String(target).replace(/\s+/g, ' ').slice(0, 140));
+  card.append(summary, el('pre', '', JSON.stringify(args, null, 1)));
+  stream.append(card); return card;
+}
+function proofBadge(line) {
+  if (!line) return;
+  const kind = line.includes('Proof: checked') ? 'checked' : line.includes('check failed') ? 'failed' : 'weak';
+  stream.append(el('div', 'proof ' + kind, line));
+}
+function hello() {
+  const box = el('div', 'hello');
+  box.append(el('h2', '', 'What should get done?'));
+  box.append(el('p', '', 'Talos works in the folder shown above: it reads and changes files, runs commands, and tells you whether its change was actually checked. It asks before anything risky.'));
+  const status = el('div', 'status' + (state.model ? '' : ' bad'));
+  status.textContent = state.model ? 'Model: ' + state.model + '. Folder: ' + state.cwd
+    : 'No model was found. Start Ollama (ollama.com) and pull a model, or open Check-up to see what is missing.';
+  box.append(status);
+  const examples = el('div', 'ex');
+  ['Make a script that renames every photo in this folder by its date, and show it works on a test copy.',
+   'Read this project and tell me what it does, in ten lines.',
+   'Every weekday at 08:30, summarise the files changed in this folder since yesterday.'].forEach((text) => {
+    const button = el('button', '', text); button.type = 'button';
+    button.onclick = () => { $('text').value = text; $('text').focus(); }; examples.append(button); });
+  box.append(examples); stream.append(box);
+}
+function busy(on) {
+  $('stop').hidden = !on; $('send').hidden = on;
+  $('state').innerHTML = on ? '<span class="spin"></span> Working' : 'Ready';
+}
+async function loadSessions() {
+  const list = await api('sessions'); const box = $('sessions'); box.textContent = '';
+  list.forEach((item) => {
+    const button = el('button'); button.append(el('span', 't', item.title || '(no title)'),
+      el('span', 'm', new Date(item.updated * 1000).toLocaleString([], {dateStyle: 'medium', timeStyle: 'short'}) + (item.running ? ' - working' : '')));
+    if (item.id === current) button.setAttribute('aria-current', 'true');
+    button.onclick = () => open(item.id); box.append(button); });
+}
+async function open(session) {
+  if (source) { source.close(); source = null; }
+  current = session; show('chat'); stream.textContent = ''; live = null;
+  if (!session) { $('title').textContent = 'New chat'; $('cwd').disabled = false; $('cwd').value = state.cwd; hello(); busy(false); loadSessions(); return; }
+  const data = await api('sessions/' + session);
+  $('title').textContent = data.session.title || 'Chat'; $('cwd').value = data.session.cwd; $('cwd').disabled = true;
+  if (data.session.model && [...$('model').options].some((o) => o.value === data.session.model)) $('model').value = data.session.model;
+  let card = null;
+  data.messages.forEach((item) => {
+    if (item.role === 'user') message('user', item.content);
+    else if (item.role === 'assistant') { if (item.content) message('assistant', item.content);
+      (item.tool_calls || []).forEach((call) => { card = toolCard(call.name, call.arguments); }); }
+    else if (item.role === 'tool' && card) card.append(el('pre', '', item.content));
+  });
+  busy(data.running); if (data.running) listen(session, 0);
+  loadSessions(); bottom();
+}
+function listen(session, after) {
+  if (source) source.close();
+  let card = null;
+  source = new EventSource('/api/sessions/' + session + '/events?after=' + after);
+  source.onmessage = (incoming) => {
+    const {event, data} = JSON.parse(incoming.data);
+    if (event === 'text') { if (!live) { live = message('assistant', ''); liveText = ''; } liveText += data; live.innerHTML = rich(liveText); }
+    else if (event === 'assistant') { live = null; }
+    else if (event === 'tool') { live = null; card = toolCard(data.name, data.arguments); }
+    else if (event === 'tool_result') { if (card) card.append(el('pre', '', data.result)); }
+    else if (event === 'warning' || event === 'learned') stream.append(el('div', 'note', (event === 'learned' ? 'Saved for next time: ' : '') + data));
+    else if (event === 'helper.tool') stream.append(el('div', 'note', 'Helper is using ' + data.name));
+    else if (event === 'permission' || event === 'question') ask(event, data);
+    else if (event === 'answered') { const box = document.querySelector('[data-ask="' + data.id + '"]'); if (box) box.remove(); }
+    else if (event === 'done') { live = null; if (data.stopped) stream.append(el('div', 'note', data.stopped === 'model error' || data.stopped === 'error' ? data.text : 'Stopped: ' + data.stopped)); proofBadge(data.proof); }
+    else if (event === 'closed' || event === 'idle') { source.close(); source = null; busy(false); loadSessions(); }
+    bottom();
+  };
+  source.onerror = () => { if (source) { source.close(); source = null; } busy(false); };
+}
+function ask(kind, data) {
+  const box = el('div', 'ask'); box.dataset.ask = data.id; box.setAttribute('role', 'alertdialog');
+  const answer = (value) => api('reply', {id: data.id, answer: value}).catch(() => {});
+  const row = el('div', 'row');
+  if (kind === 'permission') {
+    box.append(el('b', '', 'Allow this? (' + data.reason + ')'), el('code', '', data.tool + ': ' + data.target));
+    [['Allow once', 'once', 'main'], ['Always allow this', 'always', ''], ['No', 'reject', '']].forEach(([label, value, cls]) => {
+      const button = el('button', cls, label); button.type = 'button'; button.onclick = () => answer(value); row.append(button); });
+  } else {
+    box.append(el('b', '', data.question));
+    (data.options || []).forEach((option) => { const button = el('button', '', String(option)); button.type = 'button'; button.onclick = () => answer(String(option)); row.append(button); });
+    const input = el('input'); input.type = 'text'; input.placeholder = 'Type an answer, then Enter'; input.style.flex = '1';
+    input.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); answer(input.value); } }; row.append(input);
+  }
+  box.append(row); stream.append(box); const first = box.querySelector('button,input'); if (first) first.focus();
+}
+async function send(event) {
+  if (event) event.preventDefault();
+  const text = $('text').value.trim(); if (!text) return;
+  if (!current) stream.textContent = '';
+  message('user', text); $('text').value = ''; $('text').style.height = ''; busy(true); bottom();
+  try {
+    const data = await api('sessions/' + (current || 'new') + '/prompt',
+      {text, model: $('model').value, agent: $('agent').value, cwd: $('cwd').value});
+    const fresh = !current; current = data.session; $('cwd').disabled = true;
+    if (fresh) $('title').textContent = text.slice(0, 60);
+    listen(current, 0); loadSessions();
+  } catch (error) { stream.append(el('div', 'note', error.message)); busy(false); }
+}
+async function act(name) {
+  if (!current) return;
+  try {
+    if (name === 'share') { window.open('/api/sessions/' + current + '/share', '_blank'); return; }
+    if (name === 'remove') { if (!confirm('Delete this chat? Files it changed stay as they are.')) return;
+      await api('sessions/' + current, undefined, 'DELETE'); return open(''); }
+    const data = await api('sessions/' + current + '/' + name, {});
+    if (name === 'undo' && !data.undone) $('state').textContent = 'Nothing to undo';
+    if (name === 'redo' && !data.redone) $('state').textContent = 'Nothing to redo';
+    await open(current);
+    if (name === 'undo' && data.undone) $('state').textContent = 'Took back the last turn; ' + data.undone.files.length + ' file(s) restored';
+  } catch (error) { $('state').textContent = error.message; }
+}
+const pages = {
+  async skills(box) {
+    box.append(el('h2', 'page', 'Skills'), el('p', 'lead', 'Instructions the agent loads when a task matches. Talos reads its own skills and the ones OpenCode, Hermes and Claude already have. A skill that looks like it tries to take over the agent or leak data is held back until you trust it.'));
+    const table = el('table'); table.innerHTML = '<tr><th>Name</th><th>From</th><th>State</th><th>When it is used</th></tr>';
+    (await api('skills')).forEach((skill) => { const row = el('tr');
+      row.append(el('td', '', skill.name), el('td', '', skill.origin));
+      const cell = el('td'); if (skill.blocked) { cell.append(el('span', 'pill missing', 'held back'), el('div', '', skill.blocked));
+        const button = el('button', '', 'Trust'); button.onclick = async () => { await api('skills', {trust: skill.name}); show('skills'); }; cell.append(button); }
+      else cell.append(el('span', 'pill native', 'ready'));
+      row.append(cell, el('td', '', skill.description.slice(0, 220))); table.append(row); });
+    box.append(table);
+  },
+  async memory(box) {
+    box.append(el('h2', 'page', 'Memory'), el('p', 'lead', 'Short facts the agent keeps between chats: what it learned about this computer, and what you prefer. It adds to these itself; you can add or remove entries here.'));
+    const data = await api('memory');
+    [['memory', 'What the agent learned'], ['user', 'About you']].forEach(([target, label]) => {
+      box.append(el('h3', '', label)); const table = el('table');
+      (data[target] || []).forEach((entry) => { const row = el('tr'); row.append(el('td', '', entry)); const cell = el('td');
+        const button = el('button', 'quiet', 'Remove'); button.onclick = async () => { await api('memory', {action: 'remove', target, old_text: entry}); show('memory'); };
+        cell.append(button); row.append(cell); table.append(row); });
+      if (!(data[target] || []).length) table.append(el('tr', '', '')), table.lastChild.append(el('td', '', 'Nothing yet.'));
+      const input = el('input'); input.type = 'text'; input.placeholder = 'Add an entry, then Enter'; input.style.cssText = 'width:100%;max-width:none;margin:.4rem 0 1rem';
+      input.onkeydown = async (e) => { if (e.key === 'Enter' && input.value.trim()) { const r = await api('memory', {action: 'add', target, content: input.value}); alert(r.result); show('memory'); } };
+      box.append(table, input); });
+  },
+  async knowledge(box) {
+    box.append(el('h2', 'page', 'Knowledge'), el('p', 'lead', 'What you already have: your notes (Obsidian or Cairn folder) and your projects (GitHub and local folders). The agent searches these with its notes and projects tools before it answers. Nothing is copied; it is read where it is.'));
+    const input = el('input'); input.type = 'search'; input.placeholder = 'Search notes and projects, then Enter'; input.setAttribute('aria-label', 'Search notes and projects'); input.style.cssText = 'width:100%;max-width:none;margin:.2rem 0 1rem';
+    const out = el('div'); box.append(input, out);
+    const draw = (data, searched) => { out.textContent = '';
+      if (!searched) { out.append(el('h3', '', 'Note folders')); const table = el('table');
+        (data.vaults || []).forEach((vault) => { const row = el('tr'); row.append(el('td', '', vault.path), el('td', '', vault.notes + ' notes')); table.append(row); });
+        if (!(data.vaults || []).length) table.append(el('tr', '', '')), table.lastChild.append(el('td', '', 'No notes folder found. Name one in talos.json: "notes": ["path"].'));
+        out.append(table); }
+      else { out.append(el('h3', '', 'Notes')); const table = el('table');
+        (data.notes || []).forEach((note) => { const row = el('tr'); row.append(el('td', '', note.title), el('td', '', note.when), el('td', '', note.hit)); row.title = note.path; table.append(row); });
+        if (!(data.notes || []).length) table.append(el('tr', '', '')), table.lastChild.append(el('td', '', 'No note has all of these words.'));
+        out.append(table); }
+      out.append(el('h3', '', 'Projects')); const table = el('table'); table.innerHTML = '<tr><th>Name</th><th>What it is</th><th>Where</th><th>Updated</th></tr>';
+      (data.projects || []).forEach((project) => { const row = el('tr'); const where = el('td');
+        if (project.url) { const link = el('a', '', project.private ? 'GitHub (private)' : 'GitHub'); link.href = project.url; link.target = '_blank'; link.rel = 'noopener'; where.append(link); }
+        if (project.path) where.append(el('div', '', project.path));
+        row.append(el('td', '', project.name), el('td', '', project.description), where, el('td', '', project.updated)); table.append(row); });
+      if (!(data.projects || []).length) table.append(el('tr', '', '')), table.lastChild.append(el('td', '', searched ? 'No project matches.' : 'No projects found. Sign in with "gh auth login", or name folders in talos.json: "projects": {"folders": ["path"]}.'));
+      out.append(table); };
+    input.onkeydown = async (e) => { if (e.key !== 'Enter') return; const q = input.value.trim(); draw(q ? await api('knowledge', {q}) : await api('knowledge'), !!q); };
+    draw(await api('knowledge'), false);
+  },
+  async schedule(box) {
+    box.append(el('h2', 'page', 'Schedule'), el('p', 'lead', 'Tasks that run by themselves while Talos is open (or while "talos serve" runs). Results are saved in the Talos data folder, or sent to a chat platform.'));
+    const table = el('table'); table.innerHTML = '<tr><th>Name</th><th>When</th><th>Next run</th><th>Last result</th><th></th></tr>';
+    (await api('cron')).forEach((job) => { const row = el('tr');
+      row.append(el('td', '', job.name), el('td', '', job.schedule), el('td', '', job.paused ? 'paused' : job.next_run), el('td', '', job.last_status || '-'));
+      const cell = el('td'); [[job.paused ? 'resume' : 'pause', job.paused ? 'Resume' : 'Pause'], ['remove', 'Remove']].forEach(([action, label]) => {
+        const button = el('button', 'quiet', label); button.onclick = async () => { await api('cron', {action, id: job.id}); show('schedule'); }; cell.append(button); });
+      row.append(cell); table.append(row); });
+    box.append(table);
+    const form = el('div', 'grid2'); form.innerHTML = '<label for="cs">When</label><input type="text" id="cs" placeholder="weekdays 08:30   or   every 2h   or   in 20m" style="max-width:none">' +
+      '<label for="cp">What to do</label><input type="text" id="cp" placeholder="A complete instruction" style="max-width:none">';
+    const add = el('button', 'main', 'Add task'); add.onclick = async () => { const r = await api('cron', {schedule: $('cs').value, prompt: $('cp').value, cwd: $('cwd').value}); alert(r.result); show('schedule'); };
+    box.append(el('h3', '', 'New task'), form, add);
+  },
+  async parity(box) {
+    const data = await api('parity');
+    box.append(el('h2', 'page', 'Features'), el('p', 'lead', 'Every documented feature of OpenCode and Hermes Agent, and where it stands in Talos. "Native" is built in and has a test. "Bridged" means Talos hands that job to the installed tool, MCP or a plugin. "Untested" is built in but no test runs it yet. "Missing" is missing.'));
+    const names = {opencode: 'OpenCode', hermes: 'Hermes Agent', talos: 'Only in Talos'};
+    Object.keys(names).forEach((key) => { const c = data.counts[key];
+      box.append(el('h3', '', names[key] + ': ' + c.native + ' native, ' + c.bridged + ' bridged, ' + c.untested + ' untested, ' + c.missing + ' missing'));
+      const table = el('table'); table.innerHTML = '<tr><th>Feature</th><th>Status</th><th>Notes</th></tr>';
+      data.rows.filter((row) => row.source === key).forEach((item) => { const row = el('tr'); const cell = el('td'); cell.append(el('span', 'pill ' + item.status, item.status));
+        row.append(el('td', '', item.feature), cell, el('td', '', item.how)); table.append(row); });
+      box.append(table); });
+  },
+  async checkup(box) {
+    box.append(el('h2', 'page', 'Check-up'), el('p', 'lead', 'What Talos found on this computer.'));
+    const table = el('table');
+    (await api('doctor')).forEach((item) => { const row = el('tr'); const cell = el('td'); cell.append(el('span', 'pill ' + (item.ok ? 'native' : 'missing'), item.ok ? 'ok' : 'needs attention'));
+      row.append(el('td', '', item.name), cell, el('td', '', item.detail)); table.append(row); });
+    const stats = await api('stats');
+    box.append(table, el('p', 'lead', stats.sessions + ' chat(s), ' + stats.messages + ' message(s), ' + (stats.tokens_in + stats.tokens_out) + ' tokens, cost ' + stats.cost.toFixed(4)));
+  },
+};
+async function show(name) {
+  page = name;
+  document.querySelectorAll('nav button').forEach((button) => button.setAttribute('aria-current', button.dataset.page === name));
+  $('composer').hidden = name !== 'chat'; document.querySelector('header').hidden = name !== 'chat';
+  if (name === 'chat') return;
+  stream.textContent = ''; try { await pages[name](stream); } catch (error) { stream.append(el('div', 'note', error.message)); }
+  $('view').scrollTop = 0;
+}
+async function start() {
+  state = await api('state');
+  $('version').textContent = 'v' + state.version; $('foot').textContent = state.model || 'no model';
+  const saved = localStorage.getItem('talos-theme') || (state.theme === 'ink' ? 'ink' : 'paper');
+  document.documentElement.dataset.theme = saved;
+  state.agents.filter((a) => a.mode !== 'subagent').forEach((a) => { const o = el('option', '', a.name); o.value = a.name; o.title = a.description; $('agent').append(o); });
+  const models = state.models.includes(state.model) || !state.model ? state.models : [state.model, ...state.models];
+  models.forEach((m) => { const o = el('option', '', m); o.value = m; $('model').append(o); });
+  if (state.model) $('model').value = state.model;
+  $('cwd').value = state.cwd;
+  await open(location.hash.slice(1));
+  setInterval(() => fetch('/api/ping').catch(() => {}), 20000);
+}
+document.querySelectorAll('nav button').forEach((button) => button.onclick = () => button.dataset.page === 'chat' ? open(current) : show(button.dataset.page));
+$('new').onclick = () => open('');
+$('composer').onsubmit = send;
+$('stop').onclick = () => current && api('sessions/' + current + '/abort', {});
+['undo', 'redo', 'compact', 'share', 'remove'].forEach((name) => $(name).onclick = () => act(name));
+$('theme').onclick = () => { const next = document.documentElement.dataset.theme === 'ink' ? 'paper' : 'ink';
+  document.documentElement.dataset.theme = next; localStorage.setItem('talos-theme', next); };
+$('text').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) send(e); });
+$('text').addEventListener('input', () => { const t = $('text'); t.style.height = ''; t.style.height = Math.min(t.scrollHeight + 2, 224) + 'px'; });
+start().catch((error) => { stream.textContent = 'Talos could not start: ' + error.message; });
+</script>
+</body>
+</html>
