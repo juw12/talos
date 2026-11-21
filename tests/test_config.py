@@ -85,3 +85,29 @@ class ConfigTest(Case):
         loaded["context"] = 16000
         self.assertEqual(config.context_of(loaded, config.resolve_model(loaded, "ollama/plain")), 16000)
         config._CONTEXT.clear()
+
+
+    def test_busy_ollama_does_not_hold_up_the_model_list(self):
+        import time
+        calls = []
+
+        def slow_read(address):
+            calls.append(address)
+            time.sleep(0.6)
+            return [f"ollama/model-{len(calls)}"]
+        original, config._read_tags = config._read_tags, slow_read
+        self.addCleanup(setattr, config, "_read_tags", original)
+        address = "http://127.0.0.1:9/slow"
+        self.addCleanup(config._TAGS.pop, address, None)
+        self.assertEqual(config.ollama_models(address), ["ollama/model-1"])    # only the first one waits
+        started = time.time()
+        self.assertEqual(config.ollama_models(address), ["ollama/model-1"])    # fresh: no new read
+        config._TAGS[address]["at"] = 0                                         # make it old
+        self.assertEqual(config.ollama_models(address), ["ollama/model-1"])    # old answer at once
+        self.assertEqual(config.ollama_models(address), ["ollama/model-1"])    # and only one refresh
+        self.assertLess(time.time() - started, 0.3)
+        deadline = time.time() + 5
+        while config._TAGS[address]["busy"] and time.time() < deadline:
+            time.sleep(0.05)
+        self.assertEqual(config.ollama_models(address), ["ollama/model-2"])
+        self.assertEqual(len(calls), 2)

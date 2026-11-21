@@ -9,6 +9,8 @@ from __future__ import annotations
 import copy
 import os
 import re
+import threading
+import time
 from pathlib import Path
 
 from . import util
@@ -237,13 +239,52 @@ def list_models(config: dict) -> list:
     ollama = ((config.get("provider") or {}).get("ollama") or {}).get("options") or {}
     address = (ollama.get("baseURL") or PRESETS["ollama"][0]).rstrip("/")
     address = address[:-3] if address.endswith("/v1") else address
+    names += ollama_models(address)
+    return sorted(set(names))
+
+
+TAGS_FRESH = 20   # seconds an answer from Ollama is reused before asking again
+_TAGS = {}        # address -> {"at": when it was read, "names": [...], "busy": a refresh is running}
+_TAGS_LOCK = threading.Lock()
+
+
+def _read_tags(address: str) -> list:
     try:
         status, data = util.http_json("GET", address + "/api/tags", timeout=2)
         if status == 200:
-            names += [f"ollama/{item['name']}" for item in data.get("models", [])]
-    except OSError:
+            return [f"ollama/{item['name']}" for item in data.get("models", [])]
+    except (OSError, ValueError):
         pass
-    return sorted(set(names))
+    return []
+
+
+def ollama_models(address: str) -> list:
+    """The models a running Ollama offers.
+
+    Only the first question waits for Ollama. After that an old answer is returned at once and a
+    new one is read in the background, so a busy Ollama never holds up the app window.
+    """
+    with _TAGS_LOCK:
+        entry = _TAGS.get(address)
+        if entry is None:
+            entry = _TAGS[address] = {"at": 0.0, "names": None, "busy": False}
+        first = entry["names"] is None
+        stale = time.time() - entry["at"] > TAGS_FRESH
+        start_refresh = stale and not first and not entry["busy"]
+        if start_refresh:
+            entry["busy"] = True
+    if first:
+        names = _read_tags(address)
+        with _TAGS_LOCK:
+            entry["names"], entry["at"] = names, time.time()
+        return list(names)
+    if start_refresh:
+        def refresh():
+            names = _read_tags(address)
+            with _TAGS_LOCK:
+                entry["names"], entry["at"], entry["busy"] = names, time.time(), False
+        threading.Thread(target=refresh, daemon=True).start()
+    return list(entry["names"])
 
 
 def pick_default_model(config: dict) -> str:
