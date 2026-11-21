@@ -167,12 +167,27 @@ def open_window(url: str) -> str:
     return "browser tab"
 
 
-def is_talos(port: int) -> bool:
+def port_in_use(port: int) -> bool:
+    import socket
     try:
-        status, data = util.http_json("GET", f"http://127.0.0.1:{port}/api/ping", timeout=2)
-        return status == 200 and data.get("app") == "talos"
-    except (OSError, ValueError):
+        socket.create_connection(("127.0.0.1", port), timeout=2).close()
+        return True
+    except OSError:
         return False
+
+
+def is_talos(port: int, patience: float = 2) -> bool:
+    """Is a Talos already answering on this port? `patience` is how long a busy PC is given to answer."""
+    deadline = time.time() + patience
+    while True:
+        try:
+            status, data = util.http_json("GET", f"http://127.0.0.1:{port}/api/ping",
+                                          timeout=max(2, min(patience, 10)))
+            return status == 200 and data.get("app") == "talos"
+        except (OSError, ValueError):
+            if time.time() >= deadline:
+                return False
+            time.sleep(0.3)
 
 
 def shortcut_script(target: str, arguments: str, icon: str, folder: str, links) -> str:
@@ -279,7 +294,9 @@ def command_serve(args, config, store, mode="serve"):
     overrides = overrides_from(args)
     port = int(getattr(args, "port", 0) or config.get("port") or 4747)
     host = getattr(args, "host", "") or "127.0.0.1"
-    if mode == "app" and is_talos(port):
+    # Something already listens on our port: on a busy PC that is usually our own app answering
+    # slowly. Wait for it instead of starting a second copy.
+    if mode == "app" and port_in_use(port) and is_talos(port, patience=25):
         open_window(f"http://127.0.0.1:{port}/")
         return 0
     idle = 180 if mode == "app" else 0

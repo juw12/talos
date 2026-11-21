@@ -95,6 +95,31 @@ class NoConsoleTest(Case):
         self.assertEqual(seen.read_text(), "True 0")       # the child got no console window
 
 
+class SlowAppTest(Case):
+    def test_slow_app_is_not_started_twice(self):
+        """A busy PC answers late. The second double-click must reuse the app, not start another."""
+        import argparse
+        import time
+
+        from talos import server
+
+        def reply(method, path, body, headers):
+            time.sleep(3)                      # longer than the old 2 second look
+            return 200, {"ok": True, "app": "talos"}
+
+        def second_copy(*args, **kwargs):
+            raise AssertionError("a second copy of the app was started")
+        running = self.http(reply)
+        original_serve, server.serve = server.serve, second_copy
+        self.addCleanup(setattr, server, "serve", original_serve)
+        port = int(running.url.rsplit(":", 1)[1])
+        opened = []
+        original, cli.open_window = cli.open_window, lambda url: opened.append(url) or "window"
+        self.addCleanup(setattr, cli, "open_window", original)
+        code = cli.command_serve(argparse.Namespace(port=port, host=""), {}, None, mode="app")
+        self.assertEqual((code, opened), (0, [f"http://127.0.0.1:{port}/"]))
+
+
 class ShortcutTest(Case):
     def test_shortcut_script(self):
         quote = chr(39)

@@ -85,11 +85,15 @@ you chose, and only the parts the agent looks up.
 
 ## What was checked
 
-- 78 tests pass on this PC (Windows, Python 3.13) in about 4 minutes. They have never been run on Linux, macOS or Python 3.9.
+- 80 tests pass on this PC (Windows, Python 3.13). They take about 4 minutes on a quiet PC.
+  They have never been run on Linux, macOS or Python 3.9.
 - A real run on a free local model (Ollama `gemma3:1b`, 4096-token window, no tool calling):
   asked for a file `hello.py` that prints 12*12. The model first only showed the code; Talos
   asked it to act; the file was created with the right content. The model did not run the file,
   and Talos reported the result as *unverified*, which is correct.
+- On a PC kept busy by other programs, the app's own pages answered in 0.2 s while the model
+  was working (13 to 19 s before the fix), and a second double-click on the shortcut reused
+  the running app instead of starting another copy.
 - The app window opens from the Desktop shortcut on Windows 10 with its own taskbar button and
   the Talos logo (checked by reading the window's icon back and looking at the taskbar).
 - CI is set up to run the tests on Windows, Linux and macOS with Python 3.9 and 3.13.
