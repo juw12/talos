@@ -19,7 +19,6 @@ import imaplib
 import queue
 import smtplib
 import socket
-import ssl
 import threading
 import time
 import urllib.parse
@@ -240,7 +239,8 @@ class Email(Adapter):
 
     def fetch(self):
         settings = self.settings
-        box = imaplib.IMAP4_SSL(settings["imap_host"], int(settings.get("imap_port", 993)))
+        box = imaplib.IMAP4_SSL(settings["imap_host"], int(settings.get("imap_port", 993)),
+                               ssl_context=util.tls_context())
         found = []
         try:
             box.login(settings["user"], settings["password"])
@@ -264,7 +264,8 @@ class Email(Adapter):
         message = email.message.EmailMessage()
         message["From"], message["To"], message["Subject"] = settings["user"], chat, "Talos"
         message.set_content(text)
-        with smtplib.SMTP_SSL(settings["smtp_host"], int(settings.get("smtp_port", 465))) as server:
+        with smtplib.SMTP_SSL(settings["smtp_host"], int(settings.get("smtp_port", 465)),
+                              context=util.tls_context()) as server:
             server.login(settings["user"], settings["password"])
             server.send_message(message)
 
@@ -276,7 +277,7 @@ class Irc(Adapter):
         super().__init__(settings)
         self.nick = settings.get("nick", "talos")
         raw = socket.create_connection((settings["host"], int(settings.get("port", 6667))), timeout=30)
-        self.socket = ssl.create_default_context().wrap_socket(raw, server_hostname=settings["host"]) \
+        self.socket = util.tls_context().wrap_socket(raw, server_hostname=settings["host"]) \
             if settings.get("tls") else raw
         self.socket.settimeout(float(settings.get("wait", 5)))
         self.buffer = b""

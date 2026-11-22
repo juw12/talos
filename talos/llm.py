@@ -141,7 +141,8 @@ class LLM:
 
     # one HTTP round trip, streaming when the server streams
     def _post(self, model, payload, on_text, abort):
-        headers = {"Content-Type": "application/json", "Accept": "text/event-stream"}
+        headers = {"Content-Type": "application/json", "Accept": "text/event-stream",
+                   "User-Agent": util.USER_AGENT}
         headers.update(model.get("headers") or {})
         if model.get("api_key"):
             headers["Authorization"] = "Bearer " + model["api_key"]
@@ -219,8 +220,8 @@ class LLM:
                     model, payload, None if use_text else on_text, abort
                 )
             except urllib.error.HTTPError as error:
-                body = error.read().decode("utf-8", errors="replace")[:500]
-                last_error = f"HTTP {error.code}: {body}"
+                body = error.read().decode("utf-8", errors="replace")
+                last_error = util.explain_http_error(error.code, body)
                 if error.code == 400 and tools and not use_text and mode == "auto":
                     self.text_only.add(model["name"])     # the model has no tool calling
                     use_text = True

@@ -18,7 +18,7 @@ Linux or Cisco Talos.)
 | You want | Do this |
 |---|---|
 | Try it now, no model needed | `python -m talos demo` |
-| The app window | `python -m talos install-shortcut`, then click **Talos** on the Desktop or in the Start menu |
+| The app window | `python -m talos install-shortcut`, then click **Talos**: on the Desktop or in the Start menu (Windows), in Launchpad or Spotlight (Mac, it is `Talos.app` in your own Applications folder), in the menu (Linux). Or just `python -m talos app` |
 | The terminal | `python -m talos` |
 | One task, then exit | `python -m talos run "make a script that renames my photos by date" --yes` |
 
@@ -85,8 +85,20 @@ you chose, and only the parts the agent looks up.
 
 ## What was checked
 
-- 80 tests pass on this PC (Windows, Python 3.13). They take about 4 minutes on a quiet PC.
-  They have never been run on Linux, macOS or Python 3.9.
+- 80 tests passed on the PC where Talos was written (Windows, Python 3.13), in about 4 minutes.
+- On a Mac (macOS, Intel) all 91 tests pass with Python 3.14 and with Python 3.9, in about a
+  minute. Two are for Windows only and are skipped there; one more needs Python 3.10. The 11 tests
+  that the Mac added have not been run on Windows yet. Nothing has been run on Linux.
+- The first run on that Mac found five faults, all fixed and each with a test: every HTTPS call
+  failed on a fresh python.org Python (it ships no certificates; Talos now loads the system's
+  list and still checks every certificate); model calls named no program, so the Cloudflare in
+  front of a provider answered 403; such an error was shown as a page of HTML; OpenCode and
+  Claude Code were installed but not found, because they are not on the PATH an app gets; and
+  a job handed to OpenCode was done in the folder Talos was started in, not the project folder.
+- A real job through the engines bridge on that Mac: `talos engine opencode` had OpenCode write
+  and run a FizzBuzz file in the project folder, and gave its answer back, in 16 seconds.
+- The app's page opens on the Mac (looked at in Chrome), and `install-shortcut` makes a
+  `Talos.app` that macOS accepts, with the logo. The window itself was not clicked through there.
 - A real run on a free local model (Ollama `gemma3:1b`, 4096-token window, no tool calling):
   asked for a file `hello.py` that prints 12*12. The model first only showed the code; Talos
   asked it to act; the file was created with the right content. The model did not run the file,
@@ -97,15 +109,18 @@ you chose, and only the parts the agent looks up.
 - The app window opens from the Desktop shortcut on Windows 10 with its own taskbar button and
   the Talos logo (checked by reading the window's icon back and looking at the taskbar).
 - CI is set up to run the tests on Windows, Linux and macOS with Python 3.9 and 3.13.
-  It has not run yet.
+  It has never run: GitHub did not start the jobs (the account's Actions limit for private
+  repositories was reached on the day of the first push).
 
 ## What is not checked, and limits
 
 - The chat gateways (Telegram, Discord, Slack and others) were tested only against local fake
   servers, never against the real services. Email and IRC are untested.
 - Docker and SSH backends are tested with stand-in programs, not real containers or hosts.
-- The engines bridge was tested with a stand-in program. OpenCode and Hermes themselves were not
-  run through it here.
+- The engines bridge has run a real job with OpenCode (on a Mac). Hermes, Claude Code, Codex and
+  Gemini were only tested with a stand-in program.
+- Free models of OpenCode Zen answer only inside OpenCode. With such a model picked, Talos says
+  so in one line and names the agents installed on the computer that can take the job.
 - A very small model (1 GB) follows instructions poorly. In two real runs it created the file
   once and wrote a broken tool call once. Use a 7 GB+ local model or a paid model for real work.
 - Missing: OpenCode's terminal themes and its IDE extension; Hermes' voice input and its
