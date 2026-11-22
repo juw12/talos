@@ -74,6 +74,26 @@ class NetTest(Case):
         llm.LLM({}).chat(model, [{"role": "user", "content": "ping"}])
         self.assertEqual(server.requests[2][3]["User-Agent"], "mine/1")
 
+    def test_an_http_address_that_moves_to_https_gets_the_same_certificate_list(self):
+        import urllib.request
+        for address in ("http://example.com/v1", "https://example.com/v1", "http://127.0.0.1:1/v1"):
+            handlers = [item for item in util._opener(address).handlers if isinstance(item, urllib.request.HTTPSHandler)]
+            self.assertEqual(len(handlers), 1, address)
+            self.assertIs(handlers[0]._context, util.tls_context(), address)
+
+    def test_a_huge_error_page_is_not_read_whole(self):
+        page = "<html><head><title>Too big</title></head>" + "x" * 3_000_000
+        server = self.http(lambda method, path, body, headers: (500, page, "text/html"))
+        model = {"name": "test/m", "id": "m", "base_url": server.url, "api_key": "", "headers": {}}
+        read = []
+        kept = util.explain_http_error
+        util.explain_http_error = lambda status, body: read.append(len(body)) or kept(status, body)
+        self.closers.append(lambda: setattr(util, "explain_http_error", kept))
+        with self.assertRaises(llm.ModelError) as caught:
+            llm.LLM({"retry_wait": 0}).chat(model, [{"role": "user", "content": "ping"}])
+        self.assertIn("(Too big)", str(caught.exception))
+        self.assertTrue(read and max(read) <= 65536, read)
+
     def test_a_failed_call_is_said_in_one_line(self):
         page = "<!doctype html>\n<html><head>\n<title>Access denied |\n example.com</title></head><body>" + "x" * 3000
         self.assertEqual(util.explain_http_error(403, page),
@@ -108,7 +128,7 @@ class NetTest(Case):
         self.assertEqual(os.path.normcase(engines.argv(loaded, "mine", "hi")[0]), os.path.normcase(str(program)))
 
     def test_an_engine_works_in_the_project_folder_and_answers_without_colour_codes(self):
-        show = ("import os, sys; print('\\x1b[0m$ \\x1b[1;32mdone\\x1b[0m');"
+        show = ("import os, sys; print('\\x1b[0m$ \\x1b[1;32md\\x1b[38:5:196mo\\x1b]8;;http://x\\x1b\\\\n\\x1b]8;;\\x07e\\x1b[0m');"
                 "print('cwd=' + os.path.realpath(os.getcwd())); print('PWD=' + os.path.realpath(os.environ.get('PWD', os.getcwd())))")
         loaded = self.config(engines={"mine": {"command": PYTHON, "args": ["-c", show, "{prompt}"]}})
         saved = os.environ.get("PWD")

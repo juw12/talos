@@ -9,7 +9,7 @@ import re
 from . import backends, util
 
 # colours and cursor moves a terminal program prints; they are noise in a session and to a model
-ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07")
+ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
 
 # name -> (program, argv after the program; {prompt} and {model} are filled in)
 ENGINES = {
