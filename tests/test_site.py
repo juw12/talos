@@ -17,6 +17,8 @@ def shortened(output: str) -> list:
         line = re.sub(r"Working folder: .*$", "Working folder: ~/demo", line.rstrip())
         line = re.sub(r"(Created|Edited) .*[\\/]area\.py", r"\1 ~/demo/area.py", line)
         line = re.sub(r'"[^"]*" area\.py', "python area.py", line)
+        if line.startswith("Proof:"):                 # the proof line keeps 70 characters of a command: a long path of
+            line = re.sub(r'`"[^`]*`', "`python area.py`", line)             # Python cuts the file's name off there
         lines.append(line)
     return lines
 
