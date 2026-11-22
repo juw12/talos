@@ -66,6 +66,10 @@ def kill_tree(process) -> None:
 
 def run_argv(argv, cwd=None, timeout=120, abort=None, env=None, stdin_text=None):
     """Run and wait. Returns (exit code, combined output). -1 = timed out, -2 = stopped."""
+    if cwd and "PWD" in (env if env is not None else os.environ):
+        # A shell keeps PWD in step with the folder; starting a program in another folder does not.
+        # Programs that trust PWD (OpenCode does) would otherwise work in the folder Talos was started in.
+        env = dict(env if env is not None else os.environ, PWD=str(cwd))
     try:
         process = subprocess.Popen(
             argv, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,

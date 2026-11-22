@@ -4,10 +4,14 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
+import ssl
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+
+from . import __version__
 
 
 def home() -> Path:
@@ -18,6 +22,27 @@ def home() -> Path:
 def user_home() -> Path:
     """The user's home, where OpenCode and Hermes keep their files."""
     return Path(os.environ.get("TALOS_USER_HOME") or Path.home())
+
+
+def install_folders() -> list:
+    """Where command-line tools put themselves. An app opened from the Desktop, the Dock or a
+    scheduled job does not get the PATH a terminal has, so PATH alone misses them."""
+    base = user_home()
+    folders = [base / ".opencode" / "bin", base / ".local" / "bin", base / ".bun" / "bin",
+               base / ".npm-global" / "bin", base / ".cargo" / "bin", base / "bin"]
+    if os.name == "nt":
+        for name, tail in (("APPDATA", "npm"), ("LOCALAPPDATA", "Programs")):
+            if os.environ.get(name):
+                folders.append(os.path.join(os.environ[name], tail))
+    else:
+        folders += ["/opt/homebrew/bin", "/usr/local/bin"]
+    return [str(folder) for folder in folders]
+
+
+def find_program(program: str):
+    """Full path of a program: on PATH first, then in the usual install folders. None if absent."""
+    program = str(program)
+    return shutil.which(program) or shutil.which(program, path=os.pathsep.join(install_folders()))
 
 
 def hide_child_windows() -> bool:
@@ -254,11 +279,75 @@ def redact(text: str) -> str:
 
 # ---------------------------------------------------------------- HTTP
 
+# Sent with every request. Without a name of its own Python says "Python-urllib", which the
+# Cloudflare in front of many model providers turns away (HTTP 403, error code 1010).
+USER_AGENT = "talos/" + __version__
+
+# Where the trusted certificates are when Python itself has none. Python from python.org on a Mac
+# is the usual case: it ships an empty list until "Install Certificates.command" is run.
+CA_BUNDLES = (
+    "/etc/ssl/cert.pem",                        # macOS, Alpine, the BSDs
+    "/etc/ssl/certs/ca-certificates.crt",       # Debian, Ubuntu
+    "/etc/pki/tls/certs/ca-bundle.crt",         # Fedora, RHEL
+    "/etc/ssl/ca-bundle.pem",                   # openSUSE
+)
+_tls = None
+
+
+def tls_context():
+    """The context for every outgoing TLS connection. Certificates are always checked.
+
+    When this Python knows no certificate authority at all, the system's own list is loaded, so
+    HTTPS works on a Mac with a fresh python.org Python instead of failing every call.
+    """
+    global _tls
+    if _tls is None:
+        context = ssl.create_default_context()
+        if not context.cert_store_stats().get("x509_ca"):
+            for bundle in CA_BUNDLES:
+                if os.path.isfile(bundle):
+                    try:
+                        context.load_verify_locations(cafile=bundle)
+                        break
+                    except (OSError, ssl.SSLError):
+                        continue
+        _tls = context
+    return _tls
+
+
 def _opener(url: str):
     host = url.split("/")[2].split(":")[0] if "://" in url else ""
     if host in ("localhost", "127.0.0.1", "::1"):
         return urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    if url.lower().startswith("https:"):
+        return urllib.request.build_opener(urllib.request.HTTPSHandler(context=tls_context()))
     return urllib.request.build_opener()
+
+
+_TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.I | re.S)
+
+
+def explain_http_error(status: int, body: str) -> str:
+    """One readable line for a failed call, instead of a page of HTML or raw JSON."""
+    body = (body or "").strip()
+    try:
+        data = json.loads(body)
+    except ValueError:
+        data = None
+    if isinstance(data, dict):
+        error = data.get("error", data)
+        message = error.get("message") if isinstance(error, dict) else error
+        message = message or data.get("message") or data.get("detail")
+        if message:
+            return f"HTTP {status}: {clip(str(message), 400)}"
+    if re.search(r"error code:? *1010", body, re.I):
+        return (f"HTTP {status}: the provider's Cloudflare turned this program away "
+                "(error 1010, it did not accept the User-Agent)")
+    if "<html" in body[:2000].lower() or body.lower().startswith("<!doctype"):
+        title = _TITLE_RE.search(body)
+        page = re.sub(r"\s+", " ", title.group(1)).strip() if title else "an HTML page"
+        return f"HTTP {status}: the server answered with a web page, not an API answer ({clip(page, 160)})"
+    return f"HTTP {status}: {clip(body, 400)}" if body else f"HTTP {status}"
 
 
 def http(method: str, url: str, body=None, headers=None, timeout: float = 30):
@@ -273,7 +362,7 @@ def http(method: str, url: str, body=None, headers=None, timeout: float = 30):
             data = body.encode("utf-8")
         else:
             data = body
-    headers.setdefault("User-Agent", "talos")
+    headers.setdefault("User-Agent", USER_AGENT)
     request = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
         with _opener(url).open(request, timeout=timeout) as response:

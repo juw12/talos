@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -119,6 +120,21 @@ def find_browser() -> str:
     for name in ("microsoft-edge", "google-chrome", "chromium", "chromium-browser"):
         if shutil.which(name):
             return shutil.which(name)
+    if sys.platform == "darwin":
+        return mac_browser([Path("/Applications"), util.user_home() / "Applications"])
+    return ""
+
+
+MAC_BROWSERS = ("Google Chrome", "Microsoft Edge", "Chromium", "Brave Browser")
+
+
+def mac_browser(folders) -> str:
+    """On a Mac a browser is an .app folder, never a command on PATH: the program is inside it."""
+    for folder in folders:
+        for name in MAC_BROWSERS:
+            program = Path(folder) / f"{name}.app" / "Contents" / "MacOS" / name
+            if program.is_file():
+                return str(program)
     return ""
 
 
@@ -208,12 +224,49 @@ def shortcut_script(target: str, arguments: str, icon: str, folder: str, links) 
     return "\n".join(lines)
 
 
+MAC_PLIST = """<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleName</key><string>Talos</string>
+<key>CFBundleDisplayName</key><string>Talos</string>
+<key>CFBundleIdentifier</key><string>io.github.juw12.talos</string>
+<key>CFBundleExecutable</key><string>Talos</string>
+<key>CFBundleIconFile</key><string>Talos</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleShortVersionString</key><string>{version}</string>
+<key>LSUIElement</key><true/>
+</dict></plist>
+"""
+
+
+def mac_app(workspace, package_parent, picture) -> str:
+    """Talos.app in the user's own Applications folder: Launchpad and Spotlight find it there.
+
+    It is a small launcher around this Python, so it needs no build and no signing. The window it
+    opens belongs to the browser; the launcher itself stays out of the Dock.
+    """
+    bundle = util.user_home() / "Applications" / "Talos.app"
+    program = bundle / "Contents" / "MacOS" / "Talos"
+    quoted = [shlex.quote(str(part)) for part in (workspace, package_parent, sys.executable)]
+    util.write_text(program, "#!/bin/sh\ncd {}\nPYTHONPATH={} exec {} -m talos app\n".format(*quoted))
+    program.chmod(0o755)
+    util.write_text(bundle / "Contents" / "Info.plist", MAC_PLIST.format(version=__version__))
+    resources = bundle / "Contents" / "Resources"
+    resources.mkdir(parents=True, exist_ok=True)
+    if shutil.which("sips") and Path(picture).is_file():      # macOS' own tool; without it the app has no logo
+        subprocess.run(["sips", "-s", "format", "icns", str(picture), "--out", str(resources / "Talos.icns")],
+                       capture_output=True)
+    return str(bundle)
+
+
 def install_shortcut() -> list:
-    """Start menu and Desktop shortcuts that open the app window with no console."""
+    """Start menu and Desktop shortcuts (Windows), Talos.app (Mac) or a menu entry (Linux): the app window, no console."""
     workspace = Path(os.environ.get("TALOS_WORKSPACE") or util.user_home() / "Talos")
     workspace.mkdir(parents=True, exist_ok=True)
     package_parent = Path(__file__).resolve().parent.parent
     icon = Path(__file__).resolve().parent / "web" / "talos.ico"
+    if sys.platform == "darwin":
+        return [mac_app(workspace, package_parent, icon.with_suffix(".png"))]
     if os.name != "nt":
         launcher = util.home() / "talos-app.sh"
         util.write_text(launcher, f"#!/bin/sh\ncd '{workspace}'\nPYTHONPATH='{package_parent}' exec '{sys.executable}' -m talos app\n")
@@ -284,9 +337,20 @@ def command_run(args, config, store):
     else:
         if result.stopped:
             out(result.text if result.stopped == "model error" else f"Stopped: {result.stopped}")
+        if result.stopped == "model error":
+            out(other_ways(config))
         if result.proof_line():
             out(result.proof_line())
     return 1 if result.stopped else 0
+
+
+def other_ways(config) -> str:
+    """What to try when the model did not answer: the agents already on this computer, or a model."""
+    installed = list(engines.available(config))
+    if installed:
+        return (f"Another way now: talos engine {installed[0]} \"your task\" hands it to an agent that is "
+                f"installed here ({', '.join(installed)}). Or pick another model: talos models.")
+    return "Pick another model: talos models. With none: start Ollama, or talos auth set <provider> <key>."
 
 
 def command_serve(args, config, store, mode="serve"):
@@ -499,7 +563,7 @@ def main(argv=None) -> int:
     add("gitlab", "install the GitLab CI job", (("action",), {"nargs": "?", "default": "install"}))
     add("engine", "hand a task to OpenCode, Hermes, Claude, Codex or Gemini", (("name",), {"nargs": "?", "default": ""}), text)
     add("demo", "see a full run with no model needed")
-    add("install-shortcut", "add Talos to the Start menu and Desktop")
+    add("install-shortcut", "add Talos to the Start menu and Desktop (Windows), Applications (Mac) or the menu (Linux)")
     add("migrate", "use what OpenCode and Hermes already have")
     add("upgrade", "how to update")
     args = parser.parse_args(argv)

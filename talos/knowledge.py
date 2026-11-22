@@ -124,7 +124,7 @@ def _from_github(config) -> list:
     if command is False:
         return []
     if not command:
-        command = ["gh", "repo", "list", "--json", GH_FIELDS, "--limit", "300"]
+        command = [util.find_program("gh") or "gh", "repo", "list", "--json", GH_FIELDS, "--limit", "300"]
     rows = []
     for owner in settings.get("owners") or [""]:        # "" = the account gh is signed in to
         try:

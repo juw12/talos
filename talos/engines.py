@@ -4,9 +4,12 @@ This is how features that Talos does not have natively stay reachable from one p
 """
 from __future__ import annotations
 
-import shutil
+import re
 
 from . import backends, util
+
+# colours and cursor moves a terminal program prints; they are noise in a session and to a model
+ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07")
 
 # name -> (program, argv after the program; {prompt} and {model} are filled in)
 ENGINES = {
@@ -34,12 +37,17 @@ def _entry(config: dict, name: str):
     )
 
 
+def find(program: str):
+    """Full path of an engine's program, or None. See util.find_program."""
+    return util.find_program(program)
+
+
 def available(config: dict) -> dict:
     """name -> full path of the program, for every engine that is installed."""
     names = set(ENGINES) | set(config.get("engines") or {})
     found = {}
     for name in sorted(names):
-        path = shutil.which(str(_entry(config, name)[0]))
+        path = find(_entry(config, name)[0])
         if path:
             found[name] = path
     return found
@@ -47,7 +55,7 @@ def available(config: dict) -> dict:
 
 def argv(config: dict, name: str, prompt: str) -> list:
     program, arguments, model_arguments, model, _ = _entry(config, name)
-    path = shutil.which(str(program)) or str(program)
+    path = find(program) or str(program)
     full = [path] + [part.replace("{prompt}", prompt) for part in arguments]
     if model:
         full += [part.replace("{model}", model) for part in model_arguments]
@@ -60,7 +68,7 @@ def run(config: dict, name: str, prompt: str, cwd: str, abort=None) -> str:
         return f"Engine '{name}' is not installed on this PC. Installed engines: {installed}."
     timeout = _entry(config, name)[4]
     code, output = backends.run_argv(argv(config, name, prompt), cwd, timeout, abort)
-    text = util.clip(output.strip(), 20000)
+    text = util.clip(ANSI.sub("", output).strip(), 20000)
     if code != 0:
         return f"Engine '{name}' ended with exit code {code}.\n{text}"
     return text or f"Engine '{name}' gave no output."
