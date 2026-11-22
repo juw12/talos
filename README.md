@@ -112,10 +112,9 @@ you chose, and only the parts the agent looks up.
   the running app instead of starting another copy.
 - The app window opens from the Desktop shortcut on Windows 10 with its own taskbar button and
   the Talos logo (checked by reading the window's icon back and looking at the taskbar).
-- CI runs the tests, the demo and the install on Windows, Linux and macOS. On 22 Nov 2026 all
-  93 tests passed there on Windows (Python 3.13 and 3.9), macOS (3.13 and 3.9) and Linux (3.13).
-  The sixth job, Linux with Python 3.9, did not start: GitHub's Linux image no longer offers
-  that Python, so Python 3.9 on Linux is unchecked.
+- CI runs the tests, the demo and the install on Windows, Linux and macOS, each with Python 3.13
+  and 3.9: six jobs. On 22 Nov 2026 all six passed. Linux with Python 3.9 runs on Ubuntu 24.04,
+  the last of GitHub's Linux images that offers that Python; the other Linux job runs on the newest.
 
 ## What is not checked, and limits
 
