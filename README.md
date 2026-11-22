@@ -86,8 +86,8 @@ you chose, and only the parts the agent looks up.
 ## What was checked
 
 - 80 tests passed on the PC where Talos was written (Windows, Python 3.13), in about 4 minutes.
-- On a Mac (macOS, Intel) all 91 tests pass with Python 3.14 and with Python 3.9, in about a
-  minute. Two are for Windows only and are skipped there; one more needs Python 3.10. The 11 tests
+- On a Mac (macOS, Intel) all 93 tests pass with Python 3.14 and with Python 3.9, in about a
+  minute. Two are for Windows only and are skipped there; one more needs Python 3.10. The 13 tests
   that the Mac added have not been run on Windows yet. Nothing has been run on Linux.
 - The first run on that Mac found five faults, all fixed and each with a test: every HTTPS call
   failed on a fresh python.org Python (it ships no certificates; Talos now loads the system's
@@ -98,7 +98,12 @@ you chose, and only the parts the agent looks up.
 - A real job through the engines bridge on that Mac: `talos engine opencode` had OpenCode write
   and run a FizzBuzz file in the project folder, and gave its answer back, in 16 seconds.
 - The app's page opens on the Mac (looked at in Chrome), and `install-shortcut` makes a
-  `Talos.app` that macOS accepts, with the logo. The window itself was not clicked through there.
+  `Talos.app` that macOS accepts, with the logo; its launcher was started and Talos answered.
+  The window itself was not clicked through there. On a Mac the app gets its own window with
+  Chrome, Edge, Chromium or Brave; with Safari only, it opens as a tab.
+- That commit was read by a second model (OpenCode, `deepseek-v4.1-flash-free`) that did not
+  write it. It found no weakening of the certificate check and asked for four fixes, which are
+  in: a redirect from http to https, an unbounded error page, two forms of colour code.
 - A real run on a free local model (Ollama `gemma3:1b`, 4096-token window, no tool calling):
   asked for a file `hello.py` that prints 12*12. The model first only showed the code; Talos
   asked it to act; the file was created with the right content. The model did not run the file,

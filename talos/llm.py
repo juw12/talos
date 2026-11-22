@@ -220,7 +220,7 @@ class LLM:
                     model, payload, None if use_text else on_text, abort
                 )
             except urllib.error.HTTPError as error:
-                body = error.read().decode("utf-8", errors="replace")
+                body = error.read(65536).decode("utf-8", errors="replace")    # enough to say why, never megabytes
                 last_error = util.explain_http_error(error.code, body)
                 if error.code == 400 and tools and not use_text and mode == "auto":
                     self.text_only.add(model["name"])     # the model has no tool calling

@@ -37,7 +37,10 @@ class FakeHttp:
                 self.send_header("Content-Type", kind)
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
-                self.wfile.write(data)
+                try:
+                    self.wfile.write(data)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass                                    # the caller had read enough and hung up
 
             do_GET = do_POST = do_PUT = answer
 

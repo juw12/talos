@@ -317,11 +317,10 @@ def tls_context():
 
 def _opener(url: str):
     host = url.split("/")[2].split(":")[0] if "://" in url else ""
+    secure = urllib.request.HTTPSHandler(context=tls_context())   # also for an http address that redirects to https
     if host in ("localhost", "127.0.0.1", "::1"):
-        return urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    if url.lower().startswith("https:"):
-        return urllib.request.build_opener(urllib.request.HTTPSHandler(context=tls_context()))
-    return urllib.request.build_opener()
+        return urllib.request.build_opener(urllib.request.ProxyHandler({}), secure)
+    return urllib.request.build_opener(secure)
 
 
 _TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.I | re.S)

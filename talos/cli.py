@@ -248,7 +248,7 @@ def mac_app(workspace, package_parent, picture) -> str:
     bundle = util.user_home() / "Applications" / "Talos.app"
     program = bundle / "Contents" / "MacOS" / "Talos"
     quoted = [shlex.quote(str(part)) for part in (workspace, package_parent, sys.executable)]
-    util.write_text(program, "#!/bin/sh\ncd {}\nPYTHONPATH={} exec {} -m talos app\n".format(*quoted))
+    util.write_text(program, "#!/bin/sh\ncd {} || exit 1\nPYTHONPATH={} exec {} -m talos app\n".format(*quoted))
     program.chmod(0o755)
     util.write_text(bundle / "Contents" / "Info.plist", MAC_PLIST.format(version=__version__))
     resources = bundle / "Contents" / "Resources"
