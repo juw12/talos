@@ -87,8 +87,7 @@ you chose, and only the parts the agent looks up.
 
 - 80 tests passed on the PC where Talos was written (Windows, Python 3.13), in about 4 minutes.
 - On a Mac (macOS, Intel) all 93 tests pass with Python 3.14 and with Python 3.9, in about a
-  minute. Two are for Windows only and are skipped there; one more needs Python 3.10. The 13 tests
-  that the Mac added have not been run on Windows yet. Nothing has been run on Linux.
+  minute. Two are for Windows only and are skipped there; one more needs Python 3.10.
 - The first run on that Mac found five faults, all fixed and each with a test: every HTTPS call
   failed on a fresh python.org Python (it ships no certificates; Talos now loads the system's
   list and still checks every certificate); model calls named no program, so the Cloudflare in
@@ -113,9 +112,10 @@ you chose, and only the parts the agent looks up.
   the running app instead of starting another copy.
 - The app window opens from the Desktop shortcut on Windows 10 with its own taskbar button and
   the Talos logo (checked by reading the window's icon back and looking at the taskbar).
-- CI is set up to run the tests on Windows, Linux and macOS with Python 3.9 and 3.13.
-  It has never run: GitHub did not start the jobs (the account's Actions limit for private
-  repositories was reached on the day of the first push).
+- CI runs the tests, the demo and the install on Windows, Linux and macOS. On 22 Nov 2026 all
+  93 tests passed there on Windows (Python 3.13 and 3.9), macOS (3.13 and 3.9) and Linux (3.13).
+  The sixth job, Linux with Python 3.9, did not start: GitHub's Linux image no longer offers
+  that Python, so Python 3.9 on Linux is unchecked.
 
 ## What is not checked, and limits
 
