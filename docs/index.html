@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Talos: one AI agent for your computer, with OpenCode's and Hermes Agent's features</title>
+<meta name="description" content="Talos is a free, open-source AI agent for your computer. It does what OpenCode and Hermes Agent do, works with any model, needs only Python, and says how it checked its own work.">
+<link rel="canonical" href="https://juw12.github.io/talos/">
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Talos: one AI agent for your computer">
+<meta property="og:description" content="Does what OpenCode and Hermes Agent do, works with any model, needs only Python, and says how it checked its own work.">
+<meta property="og:url" content="https://juw12.github.io/talos/">
+<meta property="og:image" content="https://juw12.github.io/talos/talos.png">
+<style>
+:root{--bg:#f6f1e7;--panel:#efe8d9;--card:#fffdf8;--ink:#1d1b16;--soft:#6b6253;--line:#d9cfba;
+--teal:#1f6f5c;--amber:#b3740f;--mono:ui-monospace,"Cascadia Mono",Consolas,monospace;
+--serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif}
+@media (prefers-color-scheme:dark){:root{--bg:#171512;--panel:#1f1c18;--card:#24211c;--ink:#efe8d9;
+--soft:#a39a88;--line:#3a352c;--teal:#58c2a6;--amber:#e7a93b}}
+*{box-sizing:border-box}
+body{margin:0;font:17px/1.6 "Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+main{max-width:880px;margin:0 auto;padding:2.5rem 1.25rem 3rem}
+a{color:var(--teal)}
+a:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+h1{font:600 2.6rem/1.15 var(--serif);margin:0}
+h2{font:600 1.55rem/1.25 var(--serif);margin:2.8rem 0 .6rem}
+.brand{display:flex;align-items:center;gap:1rem;margin-bottom:1.2rem}
+.brand img{width:68px;height:68px}
+.brand small{color:var(--soft);font-size:.95rem}
+.lead{font-size:1.25rem;line-height:1.5;margin:0 0 1.4rem}
+.links{display:flex;flex-wrap:wrap;gap:.6rem;margin:0 0 .5rem}
+.links a{display:inline-block;padding:.7rem 1rem;border:1px solid var(--line);border-radius:8px;
+background:var(--card);color:var(--ink);text-decoration:none}
+.links a.main{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.links a:hover{border-color:var(--soft)}
+pre{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:.9rem 1rem;overflow:auto;
+font:14px/1.5 var(--mono);margin:.6rem 0;white-space:pre-wrap;overflow-wrap:anywhere}
+code{font:.9em var(--mono);background:var(--panel);padding:.08rem .3rem;border-radius:4px}
+pre code{background:none;padding:0}
+figure{margin:1rem 0 0}
+figure img{width:100%;height:auto;border:1px solid var(--line);border-radius:10px;display:block}
+figcaption,.note{color:var(--soft);font-size:.92rem;margin-top:.45rem}
+.counts{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:.8rem;margin:1rem 0}
+.counts div{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:.9rem 1rem}
+.counts strong{display:block;font:600 2.1rem/1.1 var(--serif);color:var(--amber)}
+.counts span{display:block;color:var(--soft);font-size:.92rem;margin-top:.3rem}
+li{margin:.35rem 0}
+footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--line);color:var(--soft);font-size:.92rem}
+</style>
+</head>
+<body>
+<main>
+<div class="brand">
+<img src="talos.png" alt="Talos logo" width="68" height="68">
+<div><h1>Talos</h1><small>version <span id="version">0.1.0</span>, MIT licence</small></div>
+</div>
+
+<p class="lead">One AI agent for your computer that does what OpenCode and Hermes Agent do, in one place,
+and tells you how it checked its own work.</p>
+
+<p class="links">
+<a class="main" href="https://github.com/juw12/talos">Get it on GitHub</a>
+<a href="https://github.com/juw12/talos/blob/main/PARITY.md">Every feature and its test</a>
+<a href="https://github.com/juw12/talos/actions/workflows/ci.yml">Test runs</a>
+</p>
+
+<p>You type a task. Talos reads and writes files, runs commands, searches the web and your own notes, and
+answers. It works with a free local model (Ollama, LM Studio) or a paid one (OpenAI, Anthropic, OpenRouter,
+Google and others). It needs only Python 3.9 or newer. There is nothing else to install.</p>
+
+<h2>Try it in one minute</h2>
+<p>No model and no key are needed for the first two lines.</p>
+<pre><code>pip install git+https://github.com/juw12/talos
+talos demo
+talos app</code></pre>
+<p class="note"><code>talos demo</code> shows a whole run. <code>talos app</code> opens the app window.
+<code>talos doctor</code> shows which models and tools it found on your computer.</p>
+
+<h2>What a run looks like</h2>
+<p>This is what <code>talos demo</code> prints. The model in it is a script, not a real model, so it runs the
+same way on every computer. The work is real: the file is written, the check fails, the file is fixed, the
+check passes, and the last line says how the result was checked.</p>
+<pre id="demo">Demo (scripted stand-in model, no network). Working folder: ~/demo
+
+&gt; Write area.py with a circle_area function and prove it works.
+
+  &gt; write area.py
+    Created ~/demo/area.py (7 lines).
+  &gt; bash python area.py
+    Traceback (most recent call last):
+  &gt; edit area.py
+    Edited ~/demo/area.py.
+  &gt; bash python area.py
+    area ok
+area.py now computes the area correctly. The first run failed its own check (it returned 6.28), I fixed the formula, and the second run printed 'area ok'.
+Proof: checked (1 file(s) changed; `python area.py` exit 0)
+
+Undo: took the turn back, area.py exists now: False (1 change(s) restored)
+This was a script, not a real model. For real work: talos doctor, then talos.</pre>
+<p class="note">Folder and Python paths are shortened here. A test in the repository runs the demo and
+compares it with this block, so the page cannot say something the program does not do.</p>
+
+<figure>
+<img src="app.png" alt="The Talos app window showing the same run: the task, the four tool calls and the answer" width="1860" height="840">
+<figcaption>The same scripted run in the app window (macOS, 22 Nov 2026).</figcaption>
+</figure>
+
+<h2>What it does</h2>
+<div class="counts">
+<div><strong data-count="opencode-native">37</strong>OpenCode features built in
+<span><b data-count="opencode-bridged">3</b> through a bridge, <b data-count="opencode-missing">2</b> missing</span></div>
+<div><strong data-count="hermes-native">30</strong>Hermes Agent features built in
+<span><b data-count="hermes-bridged">5</b> through a bridge, <b data-count="hermes-untested">2</b> untested,
+<b data-count="hermes-missing">2</b> missing</span></div>
+<div><strong data-count="talos-native">20</strong>features neither of them has
+<span>each with a test, listed in PARITY.md</span></div>
+</div>
+<ul>
+<li><b>Proof.</b> Every run that changed files ends with one line: checked, re-read only, unverified, or check failed.</li>
+<li><b>Any model can use tools.</b> A model with no tool calling gets the tools as plain text.</li>
+<li><b>It knows what you already have.</b> It searches your Obsidian or Cairn notes where they are, and lists your GitHub and local projects.</li>
+<li><b>One setup for all.</b> It reads the config, skills, agents and commands that OpenCode, Hermes, Claude Code, Codex and Vector already have on your computer.</li>
+<li><b>A guard.</b> Skills, memory, rule files and MCP tool descriptions are scanned for hidden instructions before the model sees them.</li>
+<li><b>Budgets.</b> A run stops at the number of steps, tokens or money you set.</li>
+<li><b>No dependencies.</b> Python standard library only.</li>
+</ul>
+
+<h2>What was checked</h2>
+<ul>
+<li><span id="tests">96</span> tests. They run on Windows, macOS and Linux on every change. The results are public under <a href="https://github.com/juw12/talos/actions/workflows/ci.yml">Test runs</a>.</li>
+<li>A real job on a Mac through the OpenCode bridge, and a real run on a small free local model (Ollama <code>gemma3:1b</code>).</li>
+<li>The app window on Windows 10 and on macOS.</li>
+</ul>
+
+<h2>What is not checked, and limits</h2>
+<ul>
+<li>The chat gateways (Telegram, Discord, Slack and others) were tested only against local fake servers, never against the real services. Email and IRC are untested.</li>
+<li>Docker and SSH backends are tested with stand-in programs, not real containers or hosts.</li>
+<li>A very small model (1 GB) follows instructions poorly. Use a 7 GB or larger local model, or a paid model, for real work.</li>
+<li>Python 3.9 on Linux is unchecked.</li>
+<li>This is version 0.1.0, made in one long session. Expect rough edges.</li>
+</ul>
+<p class="note">The full list is in the <a href="https://github.com/juw12/talos#what-is-not-checked-and-limits">README</a>.</p>
+
+<footer>
+The name: Talos was the bronze guard of Crete in Greek myth, a machine built to work without rest. Not related
+to Talos Linux or Cisco Talos.<br>
+Made by Juwen Lie. <a href="https://github.com/juw12/talos">github.com/juw12/talos</a>
+</footer>
+</main>
+</body>
+</html>

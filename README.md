@@ -9,6 +9,8 @@ You type a task. Talos reads and writes files, runs commands, searches the web a
 notes, and answers. It works with any model: a free local one (Ollama, LM Studio) or a paid one
 (OpenAI, Anthropic, OpenRouter, Google and others). It needs only Python. Nothing else to install.
 
+The site, with a run you can read before you install anything: <https://juw12.github.io/talos/>
+
 The name: Talos was the bronze guard of Crete in Greek myth, a machine built to work without
 rest. Bronze is an alloy of two metals, as this is one tool made from two. (Not related to Talos
 Linux or Cisco Talos.)
@@ -140,5 +142,6 @@ you chose, and only the parts the agent looks up.
 | `talos/web/` | The app window (one HTML file, no internet needed) |
 | `tests/` | The tests. Run: `python -m unittest discover -s tests -t .` |
 | `packaging/` | Builds the one-file Windows program for releases |
+| `docs/` | The site. `tests/test_site.py` holds it to what the program does |
 
 MIT licence. Made by Juwen Lie.
