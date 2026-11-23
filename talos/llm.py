@@ -16,10 +16,13 @@ import urllib.request
 from . import util
 
 # what models actually write: <tool>{..}</tool>, <tool_call>{..}</tool_call> (Hermes-style
-# models), or the JSON inside a ```tool / ```json fence
+# models), or the JSON inside a ```tool / ```json fence. Small models mix the two: gemma3:1b
+# wrote ```tool\n{..}</tool>\n``` in most rounds on the ASUS (2026-11-23), and once ```toolring, so a
+# stray tag inside a fence is allowed and any fence label that starts with 'tool' is read.
 TOOL_BLOCK = re.compile(
     r"<tool(?:_call)?>\s*(\{.*?\})\s*</tool(?:_call)?>"
-    r"|```(?:tool|tool_call|json)?[ \t]*\n\s*(\{\s*\"name\"\s*:.*?\})\s*```", re.S)
+    r"|```(?:tool\w*|json)?[ \t]*\n\s*(?:<tool(?:_call)?>\s*)?(\{\s*\"name\"\s*:.*?\})\s*"
+    r"(?:</tool(?:_call)?>\s*)?```", re.S)
 
 TEXT_TOOL_GUIDE = """
 # Tools
