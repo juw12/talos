@@ -31,6 +31,22 @@ class LlmTest(Case):
         example = 'An example file:\n```json\n{"name": "my-package", "version": "1.0"}\n```'
         self.assertEqual(llm.parse_text_calls(example), (example, []))             # plain JSON is left alone
 
+    def test_a_fence_with_a_stray_tool_tag_is_still_a_call(self):
+        # gemma3:1b on the ASUS, 2026-11-23: every round wrote the call like this and was asked again and again
+        mixed = 'I will write it.\n```tool\n{"name": "write", "arguments": {"filePath": "hello.py", ' \
+                '"content": "print(\\"hello from talos\\")"}}</tool>\n```'
+        text, calls = llm.parse_text_calls(mixed)
+        self.assertEqual(text, "I will write it.")
+        self.assertEqual(calls[0]["name"], "write")
+        self.assertEqual(calls[0]["arguments"]["content"], 'print("hello from talos")')
+        both = '```tool_call\n<tool_call>{"name": "list", "arguments": {}}</tool_call>\n```'
+        self.assertEqual([item["name"] for item in llm.parse_text_calls(both)[1]], ["list"])
+        odd_label = '```toolring\n{ "name": "write", "arguments": { "filePath": "a.py", "content": "x" } }\n```'
+        self.assertEqual([item["name"] for item in llm.parse_text_calls(odd_label)[1]], ["write"])
+        # a broken call inside such a fence is still not taken (the model is asked again)
+        broken = '```tool\n{"name": "write", "arguments": {"content": "print(\\"x\\")}}</tool>\n```'
+        self.assertEqual(llm.parse_text_calls(broken)[1], [])
+
     def test_without_streaming(self):
         runner, _, _ = self.agent([say("plain")], model_options={"stream": False})
         self.assertEqual(runner.run("hi").text, "plain")
