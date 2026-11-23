@@ -250,7 +250,9 @@ class LLM:
                     "name": call["name"],
                     "arguments": arguments if isinstance(arguments, dict) else {},
                 })
-            if tools and not calls and "<tool>" in text:
+            # a call written as text: <tool>, <tool_call>, a stray </tool>, or a ```tool fence (gemma3:1b
+            # wrote only fences, and they were never read because this looked for "<tool>" alone)
+            if tools and not calls and ("<tool" in text or "</tool" in text or "```" in text):
                 text, calls = parse_text_calls(text)
             if use_text and on_text and text:
                 on_text(text)

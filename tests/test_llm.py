@@ -17,6 +17,16 @@ class LlmTest(Case):
         self.assertNotIn("tools", model.requests[1])         # then switched to the text protocol
         self.assertIn("<tool>", model.requests[1]["messages"][0]["content"])
 
+    def test_a_fenced_call_from_a_text_only_model_is_carried_out(self):
+        # gemma3:1b on the ASUS, 2026-11-23: the call came in a ```tool fence with a stray </tool>, never
+        # with <tool>, so it was not even looked at and the run ended with nothing written
+        call = json.dumps({"name": "write", "arguments": {"filePath": "hello.py", "content": "x = 1\n"}})
+        runner, model, _ = self.agent([say("Writing it.\n```tool\n" + call + "</tool>\n```"), say("Written.")],
+                                      model_options={"native_tools": False}, proof="off")
+        result = runner.run("write hello.py")
+        self.assertEqual(result.text, "Written.")
+        self.assertEqual((self.work / "hello.py").read_text(encoding="utf-8"), "x = 1\n")
+
     def test_parse_text_calls(self):
         text, calls = llm.parse_text_calls('ok <tool>{"name": "read", "arguments": {"filePath": "a"}}</tool> <tool>{broken</tool>')
         self.assertEqual([item["name"] for item in calls], ["read"])
