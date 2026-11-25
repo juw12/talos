@@ -551,6 +551,10 @@ def main(argv=None) -> int:
         add(name, help_text, (("--port",), {"type": int, "default": 0}), (("--host",), {"default": ""}),
             (("--password",), {"default": ""}))
     add("gateway", "answer on Telegram, Discord, Slack and the other chat platforms")
+    add("relay", "your Talos chats on your phone, from anywhere (Talos Relay)",
+        (("action",), {"nargs": "?", "default": "run"}), yes,
+        (("--new",), {"action": "store_true", "help": "pair: make a new link; the old phones stop working"}),
+        (("--text",), {"action": "store_true", "help": "pair: show the code in the terminal"}))
     add("cron", "scheduled jobs", (("action",), {"nargs": "?", "default": "list"}),
         (("rest",), {"nargs": "*"}), (("--deliver",), {"default": "local"}), (("--name",), {"default": ""}))
     add("sessions", "list, search or delete sessions", (("action",), {"nargs": "?", "default": "list"}),
@@ -569,7 +573,7 @@ def main(argv=None) -> int:
         (("rest",), {"nargs": "*"}))
     add("memory", "show or add memory", (("action",), {"nargs": "?", "default": "show"}),
         (("rest",), {"nargs": "*"}))
-    add("auth", "save or list API keys", (("action",), {"nargs": "?", "default": "list"}),
+    add("auth", "save or list API keys (set <provider> <key>, login openrouter, remove <provider>)", (("action",), {"nargs": "?", "default": "list"}),
         (("rest",), {"nargs": "*"}))
     add("doctor", "show what was found on this PC")
     add("parity", "feature table against OpenCode and Hermes", (("--write",), {"action": "store_true"}))
@@ -635,6 +639,21 @@ def main(argv=None) -> int:
             path = edit_user_config(lambda data: data.setdefault("provider", {}).setdefault(
                 provider, {}).setdefault("options", {}).update(apiKey=key))
             out(f"Saved the key for {provider} in {path}")
+        elif args.action == "login":
+            if args.rest != ["openrouter"]:
+                out("Sign-in in the browser works for OpenRouter: talos auth login openrouter\n"
+                    "For the others: talos auth set <provider> <key>")
+                return 1
+            from . import login
+            try:
+                key = login.openrouter(out)
+            except ValueError as error:
+                out(str(error))
+                return 1
+            path = edit_user_config(lambda data: data.setdefault("provider", {}).setdefault(
+                "openrouter", {}).setdefault("options", {}).update(apiKey=key))
+            out(f"Saved the key for openrouter (...{key[-4:]}) in {path}\n"
+                "Its free models end in :free, for example: talos -m openrouter/openrouter/free")
         elif args.action == "remove" and args.rest:
             edit_user_config(lambda data: data.get("provider", {}).get(args.rest[0], {}).get(
                 "options", {}).pop("apiKey", None))
@@ -731,6 +750,9 @@ def main(argv=None) -> int:
             return command_batch(args, config, store)
         if name == "migrate":
             return command_migrate(args, config, store)
+        if name == "relay":
+            from . import relay
+            return relay.command(args, config, store, out, overrides_from(args))
         if name == "gateway":
             from . import gateway
             runner = gateway.Gateway(config, store)

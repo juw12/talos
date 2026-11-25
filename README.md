@@ -57,7 +57,7 @@ that lasts between chats, skills it writes for itself after long tasks, schedule
 past chats, helper agents, a gateway for Telegram, Discord, Slack and other chat apps, running
 commands in Docker or over SSH, voice out, image generation.
 
-**What neither has** (20):
+**What neither has** (22):
 
 - **Proof.** Every run that changed files ends with one honest line: *checked* (it ran something
   after the change and it passed), *re-read only*, *unverified*, or *check failed*.
@@ -79,6 +79,16 @@ commands in Docker or over SSH, voice out, image generation.
   alone for as long as it says.
 - **A run other programs can follow.** `talos run --events` prints each step as one line of JSON
   (the tool calls, their results, the answer), for a phone page or an editor.
+- **Talos Relay: your phone.** `python -m talos relay pair` shows a QR code; scan it and the
+  page https://talos-relay.pages.dev lists Talos' chats on this computer. Start a chat in a
+  folder, watch the steps, answer its questions, stop it. Before a step that can destroy work
+  or leaves the work folder, Talos asks on the phone (with `--yes` it asks nobody). The key is
+  only in the QR code and on the computer: the relay in between stores locked text it cannot
+  read. `relay install` starts it at sign-in (Windows); `relay status`, `relay forget`. To run
+  your own relay, deploy the `relay/` folder to Cloudflare Pages and set
+  `"relay": {"url": "https://your-address"}` in `talos.json`.
+- **OpenRouter without copying a key.** `python -m talos auth login openrouter` opens the
+  browser; press Authorize and the key is saved.
 - **Engines.** Hand a job to OpenCode, Hermes, Claude Code, Codex or Gemini from Talos.
 - **Tune.** `python -m talos tune` measures your models on fixed tasks and says which to use.
 - **No dependencies.** Python standard library only.
@@ -167,6 +177,7 @@ you chose, and only the parts the agent looks up.
 | `talos/web/` | The app window (one HTML file, no internet needed) |
 | `tests/` | The tests. Run: `python -m unittest discover -s tests -t .` |
 | `packaging/` | Builds the one-file Windows program for releases |
+| `relay/` | Talos Relay: the phone page (`site/`) and the relay (`functions/`, `schema.sql`) for Cloudflare Pages |
 | `docs/` | The site. `tests/test_site.py` holds it to what the program does |
 
 MIT licence. Made by Juwen Lie.
