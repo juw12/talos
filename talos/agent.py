@@ -115,6 +115,7 @@ class Agent:
         self.emit = emit or (lambda event, data: None)
         self.abort = abort or threading.Event()
         self.llm = llm_module.LLM(config)
+        self.llm.notice = lambda text: self.emit("warning", text)
         self.agents = plugins.agents(self.cwd, config)
         self.spec = self.agents.get(agent) or self.agents["build"]
         self.agent_name = self.spec.get("name", agent)
@@ -305,6 +306,9 @@ class Agent:
         model = self.model()
         self.context = config_module.context_of(self.config, model)
         self.lean = self.context < LEAN_BELOW
+        own_model, spare = self.model_name, str(self.config.get("fallback_model") or "")
+        if spare == own_model:
+            spare = ""
         if not store.messages(self.session):
             store.add_message(self.session, {"role": "system", "content": self.system_prompt()})
             if self.lean:
@@ -337,11 +341,25 @@ class Agent:
                 break
             messages = self.compact(store.messages(self.session))
             try:
-                reply = self.llm.chat(model, messages, self.schemas(),
-                                      on_text=lambda piece: self.emit("text", piece), abort=self.abort)
+                reply = self.llm.chat(model, messages, self.schemas(), abort=self.abort,
+                                      on_text=lambda piece: self.emit("text", piece), spare=bool(spare))
             except llm_module.ModelError as error:
-                stopped, final = "model error", str(error)
-                break
+                other = None
+                if spare and not self.abort.is_set():
+                    try:
+                        other = config_module.resolve_model(self.config, spare)
+                    except ValueError:
+                        other = None
+                if other is None:
+                    stopped, final = "model error", str(error)
+                    break
+                # the model does not answer: the spare one (fallback_model) does the rest of this run
+                self.emit("warning", f"{error} Talos carries on with {spare}.")
+                self.model_name, model, spare = spare, other, ""
+                self.context = config_module.context_of(self.config, model)
+                self.lean = self.context < LEAN_BELOW
+                steps -= 1
+                continue
             spent = llm_module.cost_of(model, reply["usage"])
             usage["in"] += reply["usage"]["in"]
             usage["out"] += reply["usage"]["out"]
@@ -413,6 +431,7 @@ class Agent:
             self._learn(store.messages(self.session), used_tools)
         if stopped and not final:
             final = f"Stopped: {stopped}."
+        self.model_name = own_model           # the next run tries the chosen model first again
         result = Result(final, self.session, stopped, proof, usage, steps)
         self.emit("done", {"text": final, "stopped": stopped, "proof": result.proof_line()})
         plugins.fire("session.end", self.cwd, session=self.session, text=final, proof=proof)

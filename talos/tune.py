@@ -70,7 +70,8 @@ def measure(config: dict, store, model: str, report=None) -> dict:
 
 
 def run(config: dict, store, models=None, report=None) -> dict:
-    models = models or config_module.list_models(config)
+    # the free services (glow/...) allow a few requests a minute: measured only when named
+    models = models or [name for name in config_module.list_models(config) if not name.startswith("glow/")]
     results = [measure(config, store, model, report) for model in models]
     results.sort(key=lambda item: (-item["passed"], item["seconds"]))
     best = results[0]["model"] if results and results[0]["passed"] else ""

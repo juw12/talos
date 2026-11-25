@@ -43,6 +43,72 @@ class ModelError(Exception):
     pass
 
 
+class Busy(ModelError):
+    """The server cannot answer now: too many requests, an error on its side, or no connection.
+    wait: the seconds it asked for, 0 when it did not say."""
+
+    def __init__(self, text, wait=0.0):
+        super().__init__(text)
+        self.wait = float(wait or 0)
+
+
+RESTING = {}     # route name, or "@host" for every route of a server -> until when it is left alone
+STRIKES = {}     # route name -> how many times in a row it was busy
+REST_FILE = "glow.json"      # long rests are kept here, so the next run does not ask again
+LONG_REST = 600              # a server that asks for more than this is resting as a whole
+LONGEST_REST = 6 * 3600      # ask again after this at the latest: the limit counts per network, and that can change
+_rests_read = [""]
+
+
+def stated_wait(headers, body: str) -> float:
+    """The seconds a busy server asks us to wait, from Retry-After or from its message. 0: not said."""
+    value = str((headers or {}).get("Retry-After") or "").strip()
+    if value.isdigit():
+        return float(value)
+    found = (re.search(r'"retry_after"\s*:\s*(\d+)', body or "")
+             or re.search(r"retry\s+(?:in|after)\s+(\d+)\s*s", body or "", re.I))
+    return float(found.group(1)) if found else 0.0
+
+
+def spoken_time(seconds: float) -> str:
+    seconds = max(int(seconds), 0)
+    if seconds < 120:
+        return f"{seconds} s"
+    if seconds < 7200:
+        return f"{seconds // 60} min"
+    return f"{seconds // 3600} h"
+
+
+def host_of(route: dict) -> str:
+    return "@" + route["base_url"].split("//")[-1].split("/")[0]
+
+
+def read_rests() -> None:
+    """Once for each Talos folder: the long rests an earlier run wrote down."""
+    path = util.home() / REST_FILE
+    if _rests_read[0] == str(path):
+        return
+    _rests_read[0] = str(path)
+    for name, until in (util.load_json_file(path, {}) or {}).items():
+        if isinstance(until, (int, float)) and until > time.time():
+            RESTING[name] = max(RESTING.get(name, 0), float(until))
+
+
+def rest(route: dict, seconds: float, whole_server=False) -> None:
+    seconds = min(seconds, LONGEST_REST)
+    RESTING[host_of(route) if whole_server else route["name"]] = time.time() + seconds
+    if seconds > LONG_REST:
+        long = {name: until for name, until in RESTING.items() if until > time.time() + LONG_REST}
+        try:
+            util.save_json_file(util.home() / REST_FILE, long)
+        except OSError:
+            pass
+
+
+def rests_until(route: dict) -> float:
+    return max(RESTING.get(route["name"], 0), RESTING.get(host_of(route), 0))
+
+
 def estimate_tokens(messages) -> int:
     return sum(len(json.dumps(message, ensure_ascii=False)) for message in messages) // 4
 
@@ -141,6 +207,7 @@ class LLM:
     def __init__(self, config: dict):
         self.config = config
         self.text_only = set()      # models found to reject native tool calls
+        self.notice = None          # function(text): told when the free services make us wait
 
     # one HTTP round trip, streaming when the server streams
     def _post(self, model, payload, on_text, abort):
@@ -203,8 +270,61 @@ class LLM:
                         slot["arguments_text"] += function.get("arguments") or ""
             return "".join(text_parts), [calls[key] for key in sorted(calls)], usage
 
-    def chat(self, model: dict, messages, tools=None, on_text=None, abort=None, temperature=None):
-        """Returns {"content", "tool_calls", "usage": {"in", "out"}}."""
+    def chat(self, model: dict, messages, tools=None, on_text=None, abort=None, temperature=None, spare=False):
+        """Returns {"content", "tool_calls", "usage": {"in", "out"}}.
+
+        spare: another model stands by, so a server that cannot be reached is not waited for long."""
+        if model.get("routes"):
+            return self._chat_routes(model, messages, tools, on_text, abort, temperature)
+        return self._chat_one(model, messages, tools, on_text, abort, temperature, quick=spare)
+
+    def _chat_routes(self, model, messages, tools, on_text, abort, temperature):
+        """A model that is several free services (see glow.py): the first one that is not resting
+        answers. A busy one rests as long as it asks for (a minute when it does not say, longer each
+        time in a row); one that refuses for another reason (the model is gone, a key is needed now)
+        rests an hour. When all rest, Talos waits for the first one, at most `glow_wait` seconds."""
+        read_rests()
+        deadline = time.time() + float(self.config.get("glow_wait", 300))
+        last_error, told = "", False
+        while True:
+            for route in model["routes"]:
+                if abort is not None and abort.is_set():
+                    raise ModelError(f"{model['name']}: stopped")
+                name = route["name"]
+                if rests_until(route) > time.time():
+                    continue
+                one = {key: value for key, value in model.items() if key != "routes"}
+                one.update(name=name, id=route["id"], base_url=route["base_url"], api_key=route.get("api_key") or "")
+                try:
+                    reply = self._chat_one(one, messages, tools, on_text, abort, temperature, patient=False)
+                except Busy as error:
+                    STRIKES[name] = STRIKES.get(name, 0) + 1
+                    if error.wait:
+                        rest(route, error.wait + 1, whole_server=error.wait > LONG_REST)
+                    else:
+                        rest(route, min(60 * 2 ** (STRIKES[name] - 1), 600))
+                    last_error = str(error)
+                    continue
+                except ModelError as error:
+                    rest(route, 3600)
+                    last_error = str(error)
+                    continue
+                STRIKES.pop(name, None)
+                if route.get("every"):      # it answers once in so many seconds: asking sooner only loses time
+                    RESTING[name] = time.time() + float(route["every"])
+                reply["route"] = name
+                return reply
+            soonest = min(rests_until(route) for route in model["routes"])
+            if soonest > deadline:
+                raise ModelError(f"{model['name']}: every free service is busy or refuses. The next one is free again "
+                                 f"in {spoken_time(soonest - time.time())}. The last one said: {last_error}")
+            if not told and soonest - time.time() > 5 and self.notice:
+                told = True
+                self.notice(f"The free services are busy. The next one answers in about {int(soonest - time.time()) + 1} s."
+                            + (f" ({util.clip(last_error, 200)})" if last_error else ""))
+            time.sleep(min(max(soonest - time.time(), 0.05), 2))
+
+    def _chat_one(self, model, messages, tools, on_text, abort, temperature, patient=True, quick=False):
         mode = model.get("tool_mode", "auto")
         use_text = bool(tools) and (mode == "text" or model["name"] in self.text_only)
         last_error = ""
@@ -229,14 +349,19 @@ class LLM:
                     self.text_only.add(model["name"])     # the model has no tool calling
                     use_text = True
                     continue
-                if error.code in (408, 429, 500, 502, 503, 504) and attempt < 3:
-                    time.sleep(min(2 ** attempt, 8) * float(self.config.get("retry_wait", 1)))
-                    continue
+                if not patient and error.code in (402, 408, 429, 500, 502, 503, 504):      # 402: a free tier's limit
+                    raise Busy(f"{model['name']}: {last_error}", stated_wait(error.headers, body))
+                if error.code in (408, 429, 500, 502, 503, 504):
+                    if attempt < 3:
+                        time.sleep(min(2 ** attempt, 8) * float(self.config.get("retry_wait", 1)))
+                        continue
                 raise ModelError(f"{model['name']}: {last_error}")
             except (urllib.error.URLError, OSError) as error:
                 last_error = str(getattr(error, "reason", error))
-                if attempt < 3:
-                    time.sleep(min(2 ** attempt, 8) * float(self.config.get("retry_wait", 1)))
+                if not patient:
+                    raise Busy(f"{model['name']}: cannot reach {model['base_url']} ({last_error})")
+                if attempt < (1 if quick else 3):      # quick: one more try after a second, then the spare model
+                    time.sleep(1 if quick else min(2 ** attempt, 8) * float(self.config.get("retry_wait", 1)))
                     continue
                 raise ModelError(f"{model['name']}: cannot reach {model['base_url']} ({last_error})")
             calls = []

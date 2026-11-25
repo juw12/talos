@@ -35,6 +35,7 @@ PRESETS = {
 DEFAULTS = {
     "model": "",
     "small_model": "",
+    "fallback_model": "",      # takes over for the rest of a run when the model does not answer
     "provider": {},
     "agent": {},
     "command": {},
@@ -176,6 +177,16 @@ def resolve_model(config: dict, name: str = "") -> dict:
     if not model_id:
         provider_name, model_id = "ollama", name
     provider = (config.get("provider") or {}).get(provider_name) or {}
+    if provider_name == "glow":                 # free services with no key, tried one after the other
+        from . import glow
+        found = glow.routes(config, model_id)
+        if not found:
+            raise ValueError(f"There is no glow/{model_id}. The names are: glow/" + ", glow/".join(glow.NAMES) + ".")
+        return {
+            "name": f"glow/{model_id}", "id": found[0]["id"], "base_url": found[0]["base_url"], "api_key": "",
+            "headers": {}, "context": int(provider.get("context") or glow.CONTEXT), "cost": {},
+            "tool_mode": config.get("tool_mode", "auto"), "routes": found,
+        }
     options = provider.get("options") or {}
     preset_url, preset_env = PRESETS.get(provider_name, ("", ""))
     base_url = (options.get("baseURL") or preset_url).rstrip("/")
@@ -231,8 +242,10 @@ def context_of(config: dict, model: dict) -> int:
 
 
 def list_models(config: dict) -> list:
-    """The chosen model, every model named in the config, plus what a running Ollama offers."""
+    """The chosen model, every model named in the config, Glow's free AI, plus what a running Ollama offers."""
+    from . import glow
     names = [config["model"]] if config.get("model") else []
+    names += [f"glow/{name}" for name in glow.NAMES]
     for provider_name, provider in (config.get("provider") or {}).items():
         for model_id in (provider.get("models") or {}):
             names.append(f"{provider_name}/{model_id}")
