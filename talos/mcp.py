@@ -65,10 +65,18 @@ class Local:
             return result
 
     def close(self):
+        """Ends the server and waits until it is gone: on Windows a program that still lives keeps
+        the folder it was started in, and that folder then cannot be removed."""
         try:
             self.process.kill()
-        except OSError:
+            self.process.wait(timeout=5)
+        except (OSError, subprocess.TimeoutExpired):
             pass
+        for pipe in (self.process.stdin, self.process.stdout):
+            try:
+                pipe.close()
+            except OSError:
+                pass
 
 
 class Remote:

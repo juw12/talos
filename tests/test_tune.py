@@ -3,6 +3,7 @@ import json
 from talos import tune
 from talos.fake import call, say
 from tests.base import PYTHON, Case
+from tests.test_mcp import SERVER
 
 
 def good_model(request):
@@ -38,3 +39,14 @@ class TuneTest(Case):
         self.assertIn("fake/strong", tune.apply(outcome))
         self.assertEqual(json.loads((self.home / "talos.json").read_text(encoding="utf-8"))["model"], "fake/strong")
         self.assertIn("nothing was changed", tune.apply({"recommended": ""}))
+
+    def test_job_folder_held_by_an_mcp_server(self):
+        """A local MCP server is started inside the job's folder. On Windows the folder cannot be
+        removed while that program lives: tune crashed there with PermissionError (2026-11-25)."""
+        script = self.tmp / "fake_mcp.py"
+        script.write_text(SERVER, encoding="utf-8")
+        model = self.model([good_model] * 20)
+        loaded = self.config(model, proof="off", mcp={"calc": {"type": "local", "command": [PYTHON, str(script)]}})
+        outcome = tune.run(loaded, self.store, ["fake/strong"])
+        self.assertEqual(outcome["results"][0]["passed"], 3)
+        self.assertEqual(outcome["recommended"], "fake/strong")
