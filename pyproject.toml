@@ -25,10 +25,15 @@ Homepage = "https://github.com/juw12/talos"
 talos = "talos.cli:main"
 
 [tool.setuptools]
-packages = ["talos"]
+packages = ["talos", "talos.relay_site"]
+
+# The phone page of Talos Relay (relay/site) goes along as talos/relay_site: the relay inside Talos hands it out.
+[tool.setuptools.package-dir]
+"talos.relay_site" = "relay/site"
 
 [tool.setuptools.dynamic]
 version = { attr = "talos.__version__" }
 
 [tool.setuptools.package-data]
 talos = ["web/*"]
+"talos.relay_site" = ["*"]

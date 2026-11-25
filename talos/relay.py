@@ -7,6 +7,10 @@ The relay is a small pass-on service (relay/ in the repository: one Cloudflare P
 the phone page). It holds only text sealed with AES-256-GCM. The key is made here and reaches the
 phone inside the link, after the #, which a browser sends to no server.
 
+Talos does not depend on that service. `talos relay mode local` makes `talos relay` run the same
+pass-on service and hand out the same page itself (relay_local.py), for a phone on the same network;
+`both` does the two at once. The link, the key and what is sealed are the same either way.
+
 Standard library only, so the cipher is written out below. It is checked against the published
 test vectors and against a browser's own AES-GCM (tests/test_relay.py).
 """
@@ -37,6 +41,11 @@ from . import __version__, config as config_module, qr, util
 SITE = "https://talos-relay.pages.dev"
 PROTOCOL = 1
 LOCK_PORT = 4748            # held by the one `talos relay` of this computer
+LOCAL_PORT = 4749           # where the relay inside Talos listens (relay.mode local or both; relay.port changes it)
+MODES = ("relay", "local", "both")
+MODE_WORDS = {"relay": "through the relay on the internet, from anywhere",
+              "local": "straight to this computer on the same network, with no service on the internet",
+              "both": "through the relay from anywhere, and straight to this computer on the same network"}
 TAKE_WAIT_S = 8             # the relay holds a request for prompts this long
 STATE_EVERY_S = 600         # how often the relay hears that this computer is still there
 STATE_GAP_S = 5             # ... and how soon again when a chat started, ended or asks something
@@ -194,6 +203,38 @@ def make_link(config: dict) -> dict:
 
 def phone_address(link: dict) -> str:
     return f"{link['url']}/#{link['channel']}.{link['key']}"
+
+
+def mode_of(config: dict) -> str:
+    """relay: the service on the internet. local: the relay inside Talos. both: the two at once."""
+    mode = str((config.get("relay") or {}).get("mode") or "relay").strip().lower()
+    return mode if mode in MODES else "relay"
+
+
+def local_port(config: dict) -> int:
+    try:
+        port = int((config.get("relay") or {}).get("port") or LOCAL_PORT)
+    except (TypeError, ValueError):
+        port = LOCAL_PORT
+    return port if 0 < port < 65536 else LOCAL_PORT
+
+
+def local_host(config: dict) -> str:
+    """Where the relay inside Talos listens: every network of this computer, unless relay.host names one."""
+    return str((config.get("relay") or {}).get("host") or "0.0.0.0")
+
+
+def local_link(link: dict, config: dict) -> dict:
+    """The same link, asked at the relay inside this computer."""
+    return dict(link, url=f"http://127.0.0.1:{local_port(config)}")
+
+
+def local_addresses(config: dict) -> list:
+    """Where a phone on the same network finds the relay inside this computer, the most likely first."""
+    from . import relay_local
+    host = local_host(config)
+    names = relay_local.lan_addresses() if host == "0.0.0.0" else [host]
+    return [f"http://{name}:{local_port(config)}" for name in names]
 
 
 class Wire:
@@ -382,6 +423,7 @@ class Relay:
         self.auto_yes, self.show = bool(auto_yes or (config.get("relay") or {}).get("yes")), show
         self.folder = str(Path((config.get("relay") or {}).get("folder") or self.app.cwd).expanduser().resolve())
         self.seen, self.said, self.told = {}, {}, ("", 0.0)
+        self.busy = threading.Lock()                  # one request at a time, also with two relays (mode both)
 
     # ------------------------------------------------------------ views
     def folders(self) -> list:
@@ -558,9 +600,10 @@ class Relay:
         return {"computer": self.link.get("computer", ""), "t": int(time.time() * 1000), "version": __version__,
                 "pc": int(time.time()), "chats": self.chats() if rows is None else rows}
 
-    def serve(self, stop=None) -> str:
-        """Carry requests until `stop` is set. Returns the reason it ended by itself, or ''."""
-        stop, line = stop or threading.Event(), self.line
+    def serve(self, stop=None, line=None) -> str:
+        """Carry requests until `stop` is set. Returns the reason it ended by itself, or ''.
+        `line` is the relay asked: the one of the link, unless another is given (the relay inside Talos)."""
+        stop, line = stop or threading.Event(), line or self.line
         told, failures, renewed, listed = "", 0, 0.0, None
         while not stop.is_set():
             try:
@@ -584,11 +627,11 @@ class Relay:
                 failures += 1
                 if failures == 3 and told != "down":
                     told = "down"
-                    self.show(f"Talos Relay cannot reach {self.link['url']} ({error}). It keeps trying.")
+                    self.show(f"Talos Relay cannot reach {line.link['url']} ({error}). It keeps trying.")
                 stop.wait(min(60, 2 ** failures))
                 continue
             if told == "down":
-                self.show("Talos Relay reaches the relay again.")
+                self.show(f"Talos Relay reaches {line.link['url']} again.")
             told, failures = "", 0
             for ident, body in asks:
                 if ident in self.seen:
@@ -598,7 +641,8 @@ class Relay:
                     self.seen.pop(next(iter(self.seen)))
                 try:
                     ask = line.open("ask", ident, body)
-                    answer = self.handle(ask) if isinstance(ask, dict) else None
+                    with self.busy:
+                        answer = self.handle(ask) if isinstance(ask, dict) else None
                 except ValueError:
                     answer = None                         # not sealed with this key: no answer at all
                 except Exception as error:                # one bad request must not end the service
@@ -747,14 +791,14 @@ PAIR_PAGE = """<!doctype html><html lang="en"><meta charset="utf-8"><title>Talos
 <main style="max-width:34rem;margin:0 auto;padding:2rem 1.2rem">
 <h1 style="font-size:1.4rem;font-weight:600;margin:0 0 .3rem">Talos Relay</h1>
 <p style="margin:.2rem 0 1.2rem;color:#bbb">Link your phone to Talos on <b>{computer}</b>.</p>
-<div style="background:#fff;border:1px solid #383838;border-radius:14px;padding:1rem;text-align:center">{code}</div>
+{code}
 <ol style="padding-left:1.2rem">
 <li>Scan the code with the phone's camera and open the page.</li>
 <li>iPhone: Share, then <b>Add to Home Screen</b>. Android: the browser menu, then <b>Add to Home screen</b>.</li>
-<li>Keep <code>talos relay</code> running on this computer. The phone reaches it from anywhere.</li>
+<li>Keep <code>talos relay</code> running on this computer. {reach}</li>
 </ol>
 <p style="color:#bbb">A second computer on the same phone: run <code>talos relay code</code> there and type its 4
-digits on the phone (Device, + Add device).</p>
+digits on the phone (Device, + Add device). That goes through the relay on the internet.</p>
 <p style="color:#ff7a52"><b>Whoever has this code or link can give Talos on this computer work to do.</b>
 Do not share it, and close this page when the phone is linked. Lost the phone:
 <code>talos relay pair --new</code> makes a new link and the old one stops working.</p>
@@ -762,6 +806,28 @@ Do not share it, and close this page when the phone is linked. Lost the phone:
 way only you can read:<br>{address}</p>
 </main></body></html>
 """
+PAIR_CODE = ('<p style="margin:1rem 0 .4rem;color:#bbb">{title}</p>'
+             '<div style="background:#fff;border:1px solid #383838;border-radius:14px;padding:1rem;text-align:center">'
+             '{code}</div>')
+PAIR_TITLES = {"relay": "From anywhere, through the relay on the internet",
+               "local": "On the same Wi-Fi as this computer, with nothing on the internet"}
+PAIR_REACH = {"relay": "The phone reaches it from anywhere.",
+              "local": "The phone reaches it on the same Wi-Fi as this computer.",
+              "both": "The first code works from anywhere. The second works on the same Wi-Fi as this computer, "
+                      "also when the internet is down."}
+FIREWALL = ("The first time, Windows asks whether Python may be reached on private networks: allow it, "
+            "or the phone gets no answer on the same network.")
+
+
+def pair_entries(link: dict, config: dict) -> list:
+    """[(which, address for the phone), ...] for the mode in use: 'relay', 'local' or the two."""
+    mode, entries = mode_of(config), []
+    if mode != "local":
+        entries.append(("relay", phone_address(link)))
+    if mode != "relay":
+        for address in local_addresses(config)[:1]:
+            entries.append(("local", phone_address(dict(link, url=address))))
+    return entries
 
 
 def listening() -> bool:
@@ -893,22 +959,56 @@ def claim(link: dict) -> str:
 
 
 def command(args, config, store, out, overrides=None) -> int:
-    action, link = args.action, load_link()
+    action, link, mode = args.action, load_link(), mode_of(config)
+    if action == "mode":
+        wanted = str(getattr(args, "value", "") or "").strip().lower()
+        if not wanted:
+            out(f"Mode: {mode} ({MODE_WORDS[mode]}).")
+            out("Change it: talos relay mode relay | local | both")
+            return 0
+        if wanted not in MODES:
+            out("The mode is one of: relay (through the internet), local (the same network, nothing on the "
+                "internet), both.")
+            return 1
+        path = util.home() / "talos.json"
+        data = util.load_json_file(path, {}) or {}
+        kept = data.get("relay") if isinstance(data.get("relay"), dict) else {}
+        data["relay"] = dict(kept, mode=wanted)
+        util.save_json_file(path, data)
+        out(f"Mode: {wanted} ({MODE_WORDS[wanted]}). Saved in {path}")
+        if listening():
+            out("The talos relay that is running keeps the old mode: stop it and start it again.")
+        if wanted != "relay":
+            out("The phone needs the address of this computer: talos relay pair"
+                + ("\n" + FIREWALL if os.name == "nt" else ""))
+        return 0
     if action == "status":
         if not link:
             out("No phone is linked. Link one: talos relay pair")
             return 0
-        out(f"Linked through {link['url']} as {link.get('computer', '')}.")
+        if mode != "local":
+            out(f"Linked through {link['url']} as {link.get('computer', '')}.")
+        if mode != "relay":
+            addresses = local_addresses(config)
+            out(f"On the same network the phone opens {' or '.join(addresses)} (the relay inside Talos)." if addresses
+                else "This computer has no network address right now: no phone reaches the relay inside Talos.")
+        out(f"Mode: {mode}. Change it: talos relay mode relay | local | both")
         out("Talos Relay is running: the phone reaches Talos." if listening()
             else "Talos Relay is not running: the phone gets no answer. Start it: talos relay")
         out("It starts at sign-in." if at_login() else "It does not start at sign-in (talos relay install).")
         return 0
     if action == "forget":
         if link:
-            try:
-                Line(link).forget()
-            except (OSError, http.client.HTTPException):
-                out("The relay could not be reached; it drops the channel by itself after 30 days.")
+            if mode != "local":
+                try:
+                    Line(link).forget()
+                except (OSError, http.client.HTTPException):
+                    out("The relay could not be reached; it drops the channel by itself after 30 days.")
+            if mode != "relay" and listening():
+                try:
+                    Line(local_link(link, config)).forget()
+                except (OSError, http.client.HTTPException):
+                    pass                                  # the relay inside Talos forgets all when it stops
             for path in (link_path(), util.home() / "relay-pair.html"):
                 if path.exists():
                     path.unlink()
@@ -931,30 +1031,44 @@ def command(args, config, store, out, overrides=None) -> int:
         return 0
     if action == "pair":
         if args.new or not link:
-            if link:
+            if link and mode != "local":
                 try:
                     Line(link).forget()
                 except (OSError, http.client.HTTPException):
                     pass
             link = make_link(config)
-        problem = claim(link)
-        address = phone_address(link)
-        rows = qr.matrix(address)
+        problem = claim(link) if mode != "local" else ""
+        entries = pair_entries(link, config)
+        if mode != "relay" and not [which for which, _ in entries if which == "local"]:
+            out("This computer has no network address right now, so there is no code for the same network. "
+                "Connect it to the Wi-Fi and run this again.")
+            if not entries:
+                return 1
         if args.text:
-            out(qr.blocks(rows))
+            for which, address in entries:
+                out(PAIR_TITLES[which] + ":")
+                out(qr.blocks(qr.matrix(address)))
         else:
             page = util.home() / "relay-pair.html"
-            util.write_text(page, PAIR_PAGE.format(computer=link.get("computer", ""), code=qr.svg(rows),
-                                                   address=address))
+            codes = "\n".join(PAIR_CODE.format(title=PAIR_TITLES[which], code=qr.svg(qr.matrix(address)))
+                              for which, address in entries)
+            util.write_text(page, PAIR_PAGE.format(computer=link.get("computer", ""), code=codes, reach=PAIR_REACH[mode],
+                                                   address="<br>".join(address for _, address in entries)))
             webbrowser.open(page.as_uri())
             out(f"A page with the code for the phone opens: {page}")
         out("Scan the code with the phone. Whoever has it can give Talos on this computer work: do not share it.")
         if problem:
             out(problem)
+        if mode != "relay" and os.name == "nt":
+            out(FIREWALL)
         if not listening():
             out("Then start it and leave it running: talos relay   (or: talos relay install)")
         return 0
     if action == "code":
+        if mode == "local":
+            out("A 4-digit code goes through the relay on the internet, and the mode is local. "
+                "Use the QR code: talos relay pair   (or change the mode: talos relay mode both)")
+            return 1
         if not link:
             link = make_link(config)
         if not listening():
@@ -965,13 +1079,21 @@ def command(args, config, store, out, overrides=None) -> int:
         out("talos relay            answer the phone (leave it running)\n"
             "talos relay pair       show the QR code that links a phone (--new: a new link, --text: in the terminal)\n"
             "talos relay code       show 4 digits that link a phone instead (good for 5 minutes)\n"
-            "talos relay status     is a phone linked, is it running\n"
+            "talos relay mode       relay: through the internet, from anywhere. local: the same network, with\n"
+            "                       nothing on the internet. both. (talos relay mode local)\n"
+            "talos relay status     is a phone linked, is it running, which mode\n"
             "talos relay install    start at every sign-in; remove: stop doing so\n"
             "talos relay forget     unlink every phone")
         return 1
     if not link:
         out("No phone is linked yet. Link one first: talos relay pair")
         return 1
+    return run(config, store, link, out, overrides, getattr(args, "yes", False))
+
+
+def run(config, store, link, out, overrides=None, auto_yes=False, stop=None) -> int:
+    """Answer the phone until `stop` is set (or Ctrl+C): through the relay, with the relay inside Talos, or both."""
+    mode, stop = mode_of(config), stop or threading.Event()
     lock = socket.socket()
     try:
         lock.bind(("127.0.0.1", LOCK_PORT))
@@ -979,16 +1101,42 @@ def command(args, config, store, out, overrides=None) -> int:
     except OSError:
         out("Talos Relay is already running on this computer.")
         return 0
-    relay = Relay(config, store, link, overrides, getattr(args, "yes", False), out)
+    inside = None
+    if mode != "relay":
+        from . import relay_local
+        try:
+            inside = relay_local.LocalRelay(local_host(config), local_port(config))
+        except OSError as error:
+            out(f"The relay inside Talos could not start on port {local_port(config)} ({error}). "
+                "Another program may use that port: set another one as relay.port in talos.json.")
+        if inside and not inside.site:
+            out("This Talos came without the phone page, so the relay inside Talos has nothing to show a phone.")
+        if mode == "local" and not (inside and inside.site):
+            if inside:
+                inside.close()
+            lock.close()
+            return 1
+    relay = Relay(config, store, link, overrides, auto_yes, out)
     out(f"Talos Relay answers the phone for {link.get('computer', 'this computer')}. New chats work in "
         f"{relay.folder}. " + ("It asks nobody before any step (--yes)." if relay.auto_yes
                                else "Before a step that can destroy work or leaves that folder, it asks on the phone.")
         + "  (Ctrl+C to stop)")
+    if inside:
+        addresses = local_addresses(config)
+        out(f"The relay inside Talos is on: a phone on the same network opens {' or '.join(addresses)} "
+            "(the code with the key: talos relay pair)." if addresses
+            else "The relay inside Talos is on, but this computer has no network address right now.")
+    reason = ""
     try:
-        reason = relay.serve()
+        if inside and mode == "both":
+            threading.Thread(target=relay.serve, args=(stop, Line(local_link(link, config))), daemon=True).start()
+        reason = relay.serve(stop, Line(local_link(link, config)) if mode == "local" else None)
     except KeyboardInterrupt:
         reason = ""
     finally:
+        stop.set()
+        if inside:
+            inside.close()
         lock.close()
     if reason:
         out(reason)

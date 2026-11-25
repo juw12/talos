@@ -12,7 +12,7 @@
 "use strict";
 (function () {
   var PROTOCOL = 1;
-  var APP_VERSION = "2.0.0";
+  var APP_VERSION = "2.1.0";
   var NEW = "";                         // the chat that does not exist yet
   var DEVICES = "talos-relay-devices", ACTIVE = "talos-relay-active", OLD_LINK = "talos-relay-link";
   var VIEW = "talos-relay-view", HINT = "talos-relay-hint";
@@ -21,7 +21,9 @@
   var PHOTO_SIDE = 1400, PHOTO_CHARS = 400000;   // the computer opens about 150,000 characters a second
   var BOARD_ENDED = 12, REMOVE_ARMED_MS = 4000;
   var $ = function (id) { return document.getElementById(id); };
-  var subtle = window.crypto && crypto.subtle;
+  // Over plain http (the relay inside Talos, on your own network) a browser offers no cipher: lite-crypto.js is used.
+  var subtle = (window.crypto && crypto.subtle) || window.TalosLiteCrypto;
+  var DIRECT = location.protocol === "http:";       // the page comes from the computer itself, not from the internet
 
   // ------------------------------------------------------------ what this phone keeps
   var memory = {};
@@ -919,7 +921,8 @@
   var WHY = {
     gone: "The relay no longer knows this link. On the computer, run: talos relay pair  and scan the new code.",
     key: "This link does not have the key of the computer. On the computer, run: talos relay pair  and scan the code again.",
-    offline: "This phone cannot reach the relay. It tries again by itself.",
+    offline: DIRECT ? "This phone cannot reach the computer. It must be on the same Wi-Fi. It tries again by itself."
+        : "This phone cannot reach the relay. It tries again by itself.",
     relay: "The relay did not take the request. It tries again by itself.",
   };
 
@@ -1180,7 +1183,8 @@
     throw trouble("silent");
   }
   function codeWhy(error) {
-    if (navigator.onLine === false || error.kind === "unreachable" || error.kind === "offline") return "This phone cannot reach the relay. Check its internet, then try again.";
+    if (navigator.onLine === false || error.kind === "unreachable" || error.kind === "offline") return DIRECT ? "This phone cannot reach the computer. It must be on the same Wi-Fi as the computer."
+      : "This phone cannot reach the relay. Check its internet, then try again.";
     if (error.kind === "no-code") return "No computer is showing a code right now. On that computer, run  talos relay code  and enter its 4 digits here.";
     if (error.kind === "wrong" && error.left > 0) return "That is not the code. Check the 4 digits on the computer and try again.";
     if (error.kind === "wrong") return "That is not the code, and it has stopped working now. Make a new code on the computer.";
@@ -1362,7 +1366,7 @@
     $("feed").hidden = true;
     $("menu").hidden = true;
     $("dot").className = "dot" + (active ? " bad" : "");
-    $("status").textContent = active ? "This browser cannot seal text on this page (it needs https)." : "Not linked";
+    $("status").textContent = active ? "This browser cannot seal text on this page." : "Not linked";
     return;
   }
   deviceLabels();

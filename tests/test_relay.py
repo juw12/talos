@@ -5,13 +5,15 @@ import hashlib
 import json
 import re
 import secrets
+import shutil
 import socket
+import subprocess
 import threading
 import time
 import urllib.request
 from pathlib import Path
 
-from talos import login, qr, relay, util
+from talos import login, qr, relay, relay_local, util
 from talos.fake import call, say
 from tests.base import Case
 from tests.fake_relay import FakeRelay
@@ -368,7 +370,8 @@ class SignInStartTest(Case):
 class RelayCommandTest(CliCase):
     def run_relay(self, action, settings, **flags):
         lines = []
-        args = argparse.Namespace(action=action, yes=False, new=flags.get("new", False), text=flags.get("text", True))
+        args = argparse.Namespace(action=action, yes=False, new=flags.get("new", False), text=flags.get("text", True),
+                                  value=flags.get("value", ""))
         return relay.command(args, settings, self.store, lines.append), "\n".join(lines)
 
     def test_pair_status_forget(self):
@@ -421,9 +424,60 @@ class RelayCommandTest(CliCase):
         self.assertEqual((code, out.strip()), (0, "No phone is linked. Link one: talos relay pair"), err)
 
     def test_pair_page(self):
-        page = relay.PAIR_PAGE.format(computer="PC", code="<svg></svg>", address="https://x/#a.b")
+        code = relay.PAIR_CODE.format(title=relay.PAIR_TITLES["relay"], code="<svg></svg>")
+        page = relay.PAIR_PAGE.format(computer="PC", code=code, reach=relay.PAIR_REACH["relay"], address="https://x/#a.b")
         self.assertIn("talos relay pair --new", page)
+        self.assertIn("<svg></svg>", page)
         self.assertNotIn("<script", page)
+
+    def test_the_mode_is_the_users_choice(self):
+        settings = self.config()
+        self.assertEqual(relay.mode_of(settings), "relay", "without a choice, nothing listens on the network")
+        self.assertEqual(relay.mode_of(self.config(relay={"mode": "sideways"})), "relay")
+        code, shown = self.run_relay("mode", settings)
+        self.assertEqual(code, 0)
+        self.assertIn("Mode: relay (through the relay on the internet", shown)
+        self.assertEqual(self.run_relay("mode", settings, value="sideways")[0], 1)
+        saved = util.home() / "talos.json"
+        util.save_json_file(saved, {"model": "kept", "relay": {"folder": "kept too"}})
+        code, shown = self.run_relay("mode", settings, value="Both")
+        self.assertEqual(code, 0)
+        self.assertIn("Mode: both", shown)
+        self.assertEqual(util.load_json_file(saved), {"model": "kept", "relay": {"folder": "kept too", "mode": "both"}})
+
+        # local: the link holds the address of this computer, and nothing is asked of the relay on the internet
+        nowhere = {"url": "http://127.0.0.1:9", "mode": "local", "host": "127.0.0.1", "port": 4999}
+        local = self.config(relay=nowhere)
+        code, shown = self.run_relay("pair", local)
+        link = relay.load_link()
+        self.assertEqual(code, 0, shown)
+        self.assertIn(relay.PAIR_TITLES["local"], shown)
+        self.assertNotIn(relay.PAIR_TITLES["relay"], shown)
+        self.assertNotIn("could not be reached", shown)
+        self.assertEqual(relay.pair_entries(link, local),
+                         [("local", f"http://127.0.0.1:4999/#{link['channel']}.{link['key']}")])
+        status = self.run_relay("status", local)[1]
+        self.assertIn("On the same network the phone opens http://127.0.0.1:4999", status)
+        self.assertIn("Mode: local", status)
+        self.assertNotIn("Linked through", status)
+        self.assertNotIn(link["key"], status)
+        code, shown = self.run_relay("code", local)
+        self.assertEqual(code, 1)
+        self.assertIn("talos relay pair", shown)
+
+        # both: one code for anywhere and one for the same network, with the same key
+        fake = FakeRelay()
+        self.closers.append(fake.close)
+        both = self.config(relay=dict(nowhere, url=fake.address, mode="both"))
+        relay.make_link(both)
+        code, shown = self.run_relay("pair", both)
+        link = relay.load_link()
+        kinds = relay.pair_entries(link, both)
+        self.assertEqual([which for which, _ in kinds], ["relay", "local"])
+        self.assertEqual(len({address.split("#")[1] for _, address in kinds}), 1)
+        self.assertIn(relay.PAIR_TITLES["relay"], shown)
+        self.assertIn(relay.PAIR_TITLES["local"], shown)
+        self.assertIn(link["channel"], fake.owners)
 
 
 class PageTest(Case):
@@ -451,17 +505,23 @@ class PageTest(Case):
         version = re.search(r'var APP_VERSION = "([0-9.]+)";', script).group(1)
         listed = json.loads((site / "versions.json").read_text(encoding="utf-8"))["releases"]
         self.assertEqual(listed[0]["version"], version, "the newest entry of the version history is this page")
-        self.assertEqual(page.count(f"?v={version}"), 2, "a new version reaches a phone that kept the old files")
+        self.assertEqual(page.count(f"?v={version}"), 3, "a new version reaches a phone that kept the old files")
+        self.assertLess(page.index("lite-crypto.js"), page.index("app.js"), "the page's own cipher is there first")
+        self.assertIn("crypto.subtle) || window.TalosLiteCrypto", script, "the browser's own cipher comes first")
         self.assertIn("img-src 'self' data: blob:", (site / "_headers").read_text(encoding="utf-8"))
         photo = int(re.search(r"PHOTO_CHARS = (\d+)", script).group(1))
         self.assertLessEqual(photo, relay.PHOTO_CHARS, "the page sends no photo the computer refuses")
         self.assertNotIn("innerHTML", script)
         self.assertNotIn("manifest", page, "a manifest would make the Home Screen icon forget the link")
-        for name in ("app.js", "styles.css", "icon.svg", "icon-180.png"):
+        for name in ("app.js", "lite-crypto.js", "styles.css", "icon.svg", "icon-180.png"):
             self.assertIn(name, page)
             self.assertTrue((site / name).is_file(), name)
-        self.assertFalse("://" in page + script.replace("https://<relay>/", ""),
+        lite = (site / "lite-crypto.js").read_text(encoding="utf-8")
+        self.assertFalse("://" in page + lite + script.replace("https://<relay>/", ""),
                          "the page must load nothing from another site")
+        headers = dict(line.strip().split(": ", 1) for line in (site / "_headers").read_text(encoding="utf-8").splitlines()
+                       if ": " in line)
+        self.assertEqual(headers, relay_local.PAGE_HEADERS, "the relay inside Talos hands the page out the same way")
         self.assertIn("script-src 'self'", (site / "_headers").read_text(encoding="utf-8"))
         worker = (ROOT / "relay" / "functions" / "c" / "[[path]].js").read_text(encoding="utf-8")
         for path in ("/state", "asks/take", '"ask"', '"answer"', "X-Relay-Write"):
@@ -472,9 +532,163 @@ class PageTest(Case):
         self.closers.append(fake.close)
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         for name, start in (("", b"<!doctype html>"), ("app.js", b"/* Talos Relay"), ("styles.css", b":root"),
-                            ("icon-180.png", b"\x89PNG"), ("versions.json", b"{")):
+                            ("lite-crypto.js", b"/* Talos Relay"), ("icon-180.png", b"\x89PNG"), ("versions.json", b"{")):
             with opener.open(f"{fake.address}/{name}", timeout=20) as response:
                 self.assertEqual(response.read()[:len(start)], start, name)
+                self.assertIn("script-src 'self'", response.headers["Content-Security-Policy"])
+        self.assertEqual(relay_local.site_folder(), ROOT / "relay" / "site")
+
+    def test_page_brings_its_own_cipher(self):
+        """lite-crypto.js against the cipher of Node (the one a browser has) and against the computer side."""
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("needs Node")
+        cipher, extra = relay.Cipher(bytes(range(32))), b"talos-relay/1/channel/ask/one"
+        sealed = cipher.seal("from the computer \u2713".encode("utf-8"), extra)
+        check = self.home / "lite-check.js"
+        check.write_text(LITE_CHECK, encoding="utf-8")
+        ran = subprocess.run([node, str(check), str(ROOT / "relay" / "site" / "lite-crypto.js"), sealed.hex(), extra.hex()],
+                             capture_output=True, text=True, timeout=120)
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        said, back = ran.stdout.split()
+        self.assertEqual(said, "ok")
+        self.assertEqual(cipher.open(bytes.fromhex(back), extra).decode("utf-8"), "from the computer \u2713, read on the phone")
+
+
+LITE_CHECK = r"""
+const lite = require(process.argv[2]), real = require("crypto").webcrypto;
+const hex = (data) => Buffer.from(new Uint8Array(data)).toString("hex");
+const fail = (what) => { throw new Error(what); };
+(async () => {
+  for (const size of [0, 1, 15, 16, 17, 33, 55, 56, 63, 64, 65, 119, 120, 1000, 70001]) {
+    const data = new Uint8Array(size);
+    data.set(real.getRandomValues(new Uint8Array(Math.min(size, 65536))));
+    if (hex(await lite.digest("SHA-256", data)) !== hex(await real.subtle.digest("SHA-256", data))) fail("digest " + size);
+    for (const extraSize of [0, 5, 16, 40]) {
+      const raw = real.getRandomValues(new Uint8Array(32)), iv = real.getRandomValues(new Uint8Array(12));
+      const extra = real.getRandomValues(new Uint8Array(extraSize));
+      const how = extraSize ? { name: "AES-GCM", iv: iv, additionalData: extra } : { name: "AES-GCM", iv: iv };
+      const mine = await lite.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
+      const theirs = await real.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
+      const sealed = new Uint8Array(await lite.encrypt(how, mine, data));
+      if (hex(sealed) !== hex(await real.subtle.encrypt(how, theirs, data))) fail("encrypt " + size + "/" + extraSize);
+      if (hex(await lite.decrypt(how, mine, sealed.subarray(0))) !== hex(data)) fail("decrypt " + size);
+      sealed[sealed.length - 1 - (size % 16)] ^= 4;
+      if (await lite.decrypt(how, mine, sealed).then(() => true, () => false)) fail("a changed text was opened " + size);
+    }
+    for (const keySize of [1, 32, 64, 65, 200]) {
+      const raw = real.getRandomValues(new Uint8Array(keySize)), kind = { name: "HMAC", hash: "SHA-256" };
+      const mine = await lite.importKey("raw", raw, kind, false, ["sign"]);
+      const theirs = await real.subtle.importKey("raw", raw, kind, false, ["sign"]);
+      if (hex(await lite.sign("HMAC", mine, data)) !== hex(await real.subtle.sign("HMAC", theirs, data))) fail("sign " + size);
+    }
+  }
+  // what the computer sealed is read, and answered so that the computer can read it
+  const whole = Buffer.from(process.argv[3], "hex"), extra = Buffer.from(process.argv[4], "hex");
+  const key = await lite.importKey("raw", Uint8Array.from({ length: 32 }, (_, at) => at), "AES-GCM", false, ["encrypt", "decrypt"]);
+  const how = { name: "AES-GCM", iv: whole.subarray(0, 12), additionalData: extra };
+  const text = new TextDecoder().decode(await lite.decrypt(how, key, whole.subarray(12)));
+  const nonce = real.getRandomValues(new Uint8Array(12));
+  const answer = await lite.encrypt({ name: "AES-GCM", iv: nonce, additionalData: extra }, key, new TextEncoder().encode(text + ", read on the phone"));
+  console.log("ok", hex(nonce) + hex(answer));
+})().catch((error) => { console.error(error.message); process.exit(1); });
+"""
+
+
+class LocalRelayTest(Case):
+    """Talos without the relay on the internet: `talos relay` passes the sealed text on itself."""
+
+    def free_port(self):
+        free = socket.socket()
+        free.bind(("127.0.0.1", 0))
+        port = free.getsockname()[1]
+        free.close()
+        return port
+
+    def start(self, mode, url, steps):
+        before, relay.LOCK_PORT = relay.LOCK_PORT, self.free_port()          # this computer may run a real one
+        self.closers.append(lambda: setattr(relay, "LOCK_PORT", before))
+        model = self.model(steps)
+        settings = dict(proof="off", relay={"url": url, "mode": mode, "host": "127.0.0.1", "port": self.free_port()})
+        self.settings = self.config(model, **settings)
+        self.link = relay.make_link(self.settings)
+        self.notes, stop, ended = [], threading.Event(), []
+        thread = threading.Thread(daemon=True, target=lambda: ended.append(relay.run(
+            self.settings, self.store, self.link, self.notes.append, model.config(**settings), stop=stop)))
+        thread.start()
+        for close in (lambda: thread.join(15), stop.set):
+            self.closers.append(close)
+        inside = relay.local_link(self.link, self.settings)
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            try:
+                if util.http("GET", f"{inside['url']}/c/{inside['channel']}/state", None, None, 5)[0] == 200:
+                    return Phone(inside), ended
+            except OSError:
+                pass
+            time.sleep(0.05)
+        raise AssertionError(f"the relay inside Talos did not come up: {self.notes} {ended}")
+
+    def test_phone_reaches_talos_through_the_relay_inside(self):
+        # the relay on the internet cannot be reached at all, and in mode local nobody asks it
+        phone, ended = self.start("local", "http://127.0.0.1:9", [say("Done without the internet.")])
+        self.assertEqual(phone.call("look")["chats"], [])
+        session = phone.call("send", session="", text="Say that it works.", folder="")["session"]
+        chat = phone.until(session, lambda chat: not chat["running"])
+        self.assertIn("Done without the internet.", json.dumps(chat))
+        self.assertIn("The relay inside Talos is on", "\n".join(self.notes))
+        self.assertNotIn("cannot reach", "\n".join(self.notes))
+        address = relay.local_addresses(self.settings)[0]
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(address + "/", timeout=20) as response:
+            self.assertIn(b"lite-crypto.js", response.read())
+        self.assertEqual(ended, [], "it runs until it is stopped")
+
+    def test_both_ways_reach_the_same_talos(self):
+        fake = FakeRelay()
+        self.closers.append(fake.close)
+        inside, ended = self.start("both", fake.address, [say("Seen from both sides.")])
+        deadline = time.time() + 30
+        while self.link["channel"] not in fake.owners and time.time() < deadline:
+            time.sleep(0.05)
+        outside = Phone(self.link)
+        session = inside.call("send", session="", text="Start here.", folder="")["session"]
+        chat = outside.until(session, lambda chat: not chat["running"])
+        self.assertIn("Seen from both sides.", json.dumps(chat))
+        self.assertEqual([row["id"] for row in inside.call("look")["chats"]], [session])
+        self.assertNotIn(self.link["key"], json.dumps(fake.seen))
+
+    def test_only_this_computer_makes_a_channel(self):
+        fake = FakeRelay()
+        self.closers.append(fake.close)
+        link = relay.make_link(self.config(relay={"url": fake.address}))
+        line, near = relay.Line(link), relay_local.Handler.near
+        self.closers.append(line.wire.close)
+        self.closers.append(lambda: setattr(relay_local.Handler, "near", near))
+        relay_local.Handler.near = lambda handler: False                     # as a request from another device
+        self.assertEqual(line.put_state({"computer": "theirs"}), 403)
+        self.assertEqual(fake.owners, {})
+        relay_local.Handler.near = near
+        self.assertEqual(line.put_state({"computer": "mine"}), 200)
+        relay_local.Handler.near = lambda handler: False
+        phone = Phone(link)                                                  # a phone on the network still asks and reads
+        self.assertEqual(phone.leave("a" * 12, "sealed"), 200)
+        self.assertEqual(util.http("GET", f"{line.base}/state")[0], 200)
+        other = relay.Line(dict(link, token=secrets.token_urlsafe(32)))
+        self.closers.append(other.wire.close)
+        self.assertEqual((other.put_state({"computer": "theirs"}), other.take(0)[0], other.forget()), (403, 404, 404))
+
+        # what nobody fetched is dropped
+        self.assertEqual(line.answer("b" * 12, {"late": True}), 200)
+        self.assertEqual(len(fake.asks[link["channel"]]) + len(fake.answers[link["channel"]]), 2)
+        kept, relay_local.KEEP_S = relay_local.KEEP_S, 0
+        self.closers.append(lambda: setattr(relay_local, "KEEP_S", kept))
+        fake.swept = 0
+        time.sleep(0.05)
+        self.assertEqual(util.http("GET", f"{line.base}/state")[0], 200)
+        self.assertEqual((fake.asks, fake.answers), ({}, {}))
+        too_large = util.http("PUT", f"{line.base}/state", "x" * (relay_local.MAX_ANSWER + 2000), line.mine)[0]
+        self.assertEqual(too_large, 413)
 
 
 class SignInTest(Case):

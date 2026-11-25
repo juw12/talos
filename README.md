@@ -94,6 +94,14 @@ commands in Docker or over SSH, voice out, image generation.
   it at sign-in (Windows, macOS, Linux); `relay status`, `relay forget`. To run your own relay,
   deploy the `relay/` folder to Cloudflare Pages and set
   `"relay": {"url": "https://your-address"}` in `talos.json`.
+- **Talos Relay without the relay.** Talos does not depend on that service: you choose.
+  `python -m talos relay mode local` makes `talos relay` hand out the same phone page and pass the
+  sealed text on itself, at `http://<this computer>:4749`, for a phone on the same Wi-Fi. Nothing
+  on the internet is used. `mode both` does the two at once (one QR code for anywhere, one for the
+  same Wi-Fi, same key); `mode relay` is the default. What crosses your network is sealed with the
+  same key as before, and only the computer itself can make a channel. On Windows the firewall
+  asks once whether Python may be reached on private networks. `"relay": {"port": 4749, "host":
+  "0.0.0.0"}` in `talos.json` change where it listens.
 - **OpenRouter without copying a key.** `python -m talos auth login openrouter` opens the
   browser; press Authorize and the key is saved.
 - **Engines.** Hand a job to OpenCode, Hermes, Claude Code, Codex or Gemini from Talos.
@@ -171,9 +179,13 @@ you chose, and only the parts the agent looks up.
 - Talos Relay was used in a real browser at phone size (Edge, 390 x 844) against a local relay:
   new chat, chat list, an answer with a table, a permission question, a second computer added by
   its code, All chats. It was not used on a real phone, and never on iOS. Sign-in start on macOS
-  and Linux is tested only by the files it writes. It has no mode for the local Wi-Fi without
-  the relay, and no desktop app of its own (Vector Relay has both; on a PC, open the page in a
-  browser). The Android app is checked only on an emulator: it installs, opens and stays up. A
+  and Linux is tested only by the files it writes. The mode for the local Wi-Fi without the relay
+  (`relay mode local`) is tested on one computer only: a phone asking through the relay inside
+  Talos, the page's own cipher against the cipher of Node, and the page in Edge at phone size
+  over plain http, where the browser has no cipher (chat list, an answer with a table, a new
+  prompt). No real phone on a real Wi-Fi has used it, the address changes when the router gives the computer another one, and the 4-digit
+  code and a second computer on the same page need the relay on the internet. It has no desktop
+  app of its own (Vector Relay has one; on a PC, open the page in a browser). The Android app is checked only on an emulator: it installs, opens and stays up. A
   photo travels slowly: the
   lock is plain Python, about 150 KB a second on the PC where it was measured, and the model
   must be one that reads pictures.

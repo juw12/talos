@@ -105,7 +105,7 @@ fails if a row marked native does not name an existing test.
 
 ## Only in Talos
 
-22 native, 0 bridged, 0 untested, 0 missing.
+23 native, 0 bridged, 0 untested, 0 missing.
 
 | Feature | Status | Notes | Proof |
 |---|---|---|---|
@@ -129,6 +129,6 @@ fails if a row marked native does not name an existing test.
 | App window with its own taskbar logo, and no console windows popping up behind it | native |  | live + test: `test_cli.NoConsoleTest.test_app_does_not_open_console_windows` |
 | Unreadable tool calls are sent back with the reason instead of ending the run | native |  | test: `test_agent.AgentTest.test_unreadable_tool_call_is_sent_back` |
 | Talos Relay: start, follow, answer and stop its chats from a phone page; the relay in between sees only locked text | native | its own page and relay (relay/); AES-256-GCM, key only in the QR code; several computers, a 4-digit code, photos, one list of all chats | test: `test_relay.RelayTest.test_phone_starts_a_chat_and_allows_a_step` |
+| Talos Relay without the relay on the internet: the computer hands out the phone page and passes the sealed text on itself, for a phone on the same network (relay mode local or both) | native | relay_local.py; the page brings its own cipher for plain http (lite-crypto.js); only this computer can make a channel | test: `test_relay.LocalRelayTest.test_phone_reaches_talos_through_the_relay_inside` |
 | Sign in to OpenRouter in the browser: no key to copy (auth login openrouter) | native |  | test: `test_relay.SignInTest.test_openrouter_sign_in` |
 | No dependencies: Python standard library only | native |  | test: `test_parity.ParityTest.test_standard_library_only` |
-

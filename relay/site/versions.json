@@ -2,6 +2,16 @@
   "note": "The one list of versions of the Talos Relay phone page. The page shows it under Version history.",
   "releases": [
     {
+      "version": "2.1.0",
+      "date": "2026-11-25",
+      "title": "Talos Relay without the relay on the internet",
+      "changes": [
+        "The computer can hand out this page itself: on the computer run `talos relay mode local` (or `both`), then `talos relay pair`. A phone on the same Wi-Fi then reaches Talos with no service on the internet.",
+        "Over plain http a browser offers no cipher of its own, so the page brings one (lite-crypto.js). What crosses the network is sealed with the same key as before.",
+        "When the page comes from the computer itself, a failed request says that the phone must be on the same Wi-Fi."
+      ]
+    },
+    {
       "version": "2.0.0",
       "date": "2026-11-25",
       "title": "The look and the parts of Vector Relay",
