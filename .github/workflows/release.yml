@@ -15,7 +15,7 @@ jobs:
       - name: Build talos.exe (one file, Python included)
         run: |
           python -m pip install pyinstaller
-          pyinstaller --onefile --name talos --icon talos/web/talos.ico --add-data "talos/web;talos/web" packaging/talos_exe.py
+          pyinstaller --onefile --name talos --icon talos/web/talos.ico --add-data "talos/web;talos/web" --add-data "relay/site;talos/relay_site" packaging/talos_exe.py
       - name: The exe starts and runs the demo
         run: |
           dist\talos.exe --version
