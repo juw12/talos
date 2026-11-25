@@ -64,8 +64,21 @@ LEAN_BELOW = 12000        # tokens; under this the model gets the short prompt
 CORE_TOOLS = ("read", "write", "edit", "grep", "glob", "list", "bash", "webfetch", "websearch",
               "skill", "memory", "question", "notes", "projects")
 
-TRIVIAL = re.compile(r"^\s*(cd|ls|dir|pwd|echo|cat|type|get-childitem|get-location|get-content|"
-                     r"write-host|write-output|mkdir|new-item|git\s+(status|log|diff|add|commit))\b", re.I)
+TRIVIAL = re.compile(r"^\s*(cd|ls|dir|pwd|echo|cat|type|get-childitem|get-location|get-content|set-location|push-location|"
+                     r"pop-location|write-host|write-output|mkdir|new-item|git\s+(status|log|diff|add|commit))\b", re.I)
+PARTS = re.compile(r"""("[^"]*"|'[^']*')|(;|&&|\|\||\n)""")   # a quoted piece, or what ends one command of a line
+
+
+def trivial(command: str) -> bool:
+    """True when a command line proves nothing about the work: every command on it only looks
+    around (cd, ls, git status). `cd project; python test.py` is a real check, though it starts with cd."""
+    parts, start = [], 0
+    for found in PARTS.finditer(command):
+        if found.group(2):
+            parts.append(command[start:found.start()])
+            start = found.end()
+    parts.append(command[start:])
+    return all(TRIVIAL.match(part) for part in parts if part.strip())
 
 
 class Result:
@@ -273,7 +286,7 @@ class Agent:
         files = sorted(set(self.ctx.edits))
         if not files:
             return {"level": "nothing changed", "files": [], "evidence": []}
-        real = [check for check in self.ctx.checks if not TRIVIAL.match(check["command"])]
+        real = [check for check in self.ctx.checks if not trivial(check["command"])]
         if real and real[-1]["exit"] == 0:
             level = "checked"
         elif real:
