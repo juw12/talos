@@ -29,8 +29,9 @@ class AgentTest(Case):
         self.assertEqual(runner.run("make it").proof["level"], "re-read only")
 
         # a check that starts with cd is still a check; a line that only looks around is not
+        program = PYTHON if " " not in PYTHON else "python"   # unquoted: every shell runs it after a `;`
         runner, _, _ = self.agent([call("write", filePath="ok.py", content="print('fine')\n"),
-                                   call("bash", command=f'cd . && "{PYTHON}" ok.py'), say("done")])
+                                   call("bash", command=f"cd . ; {program} ok.py"), say("done")])
         self.assertEqual(runner.run("make it").proof["level"], "checked")
         self.assertTrue(agent_module.trivial('cd "C:\\a; b" && ls; git status\necho "x; python t.py"'))
         self.assertFalse(agent_module.trivial("cd src && python -m pytest -q"))
