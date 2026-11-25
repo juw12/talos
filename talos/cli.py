@@ -314,26 +314,34 @@ def command_run(args, config, store):
     if args.session or getattr(args, "continue_", False):
         session = store.find_session(args.session or "last") or ""
     text, agent, model = repl.prepare(text, config["_cwd"], config, args.agent, "")
+    events = getattr(args, "events", False)
+    if events:
+        args.json = True                         # nothing but JSON on the output
     printer = repl.Printer(quiet=args.json, out=open(os.devnull, "w") if args.json else None)
+    if events:
+        printer = event_lines
     interactive = sys.stdin.isatty() and not args.json and not args.yes
     runner = agent_module.Agent(
         config, store, session=session, agent=agent or "build", model=model, auto_yes=args.yes,
         asker=repl.console_asker if interactive else None,
         ask=repl.console_ask if interactive else None, emit=printer)
+    if events:
+        event_lines("session", {"session": runner.session, "model": runner.model_name})
     try:
         result = runner.run(text)
     except ValueError as error:                  # no usable model: say so in the format that was asked for
         if not args.json:
             raise
-        out(json.dumps({"text": str(error), "session": runner.session, "stopped": "model error",
-                        "proof": {"level": "nothing changed"}, "usage": {}, "steps": 0}, ensure_ascii=False))
+        answer = {"text": str(error), "session": runner.session, "stopped": "model error",
+                  "proof": {"level": "nothing changed"}, "usage": {}, "steps": 0}
+        out(json.dumps({"event": "result", "data": answer} if events else answer, ensure_ascii=False))
         return 1
     finally:
         runner.close()
     if args.json:
-        out(json.dumps({"text": result.text, "session": result.session, "stopped": result.stopped,
-                        "proof": result.proof, "usage": result.usage, "steps": result.steps},
-                       ensure_ascii=False))
+        answer = {"text": result.text, "session": result.session, "stopped": result.stopped,
+                  "proof": result.proof, "usage": result.usage, "steps": result.steps}
+        out(json.dumps({"event": "result", "data": answer} if events else answer, ensure_ascii=False))
     else:
         if result.stopped:
             out(result.text if result.stopped == "model error" else f"Stopped: {result.stopped}")
@@ -342,6 +350,17 @@ def command_run(args, config, store):
         if result.proof_line():
             out(result.proof_line())
     return 1 if result.stopped else 0
+
+
+def event_lines(event, data):
+    """talos run --events: each thing the agent does as one line of JSON, for a program that shows
+    the work while it runs (a phone page, an editor). The pieces of streamed text are left out; the
+    whole message comes as "assistant". The last line is the event "result"."""
+    if event == "text":
+        return
+    if event.endswith("tool_result") and isinstance(data, dict):
+        data = dict(data, result=util.clip(str(data.get("result", "")), 2000))
+    out(json.dumps({"event": event, "data": data}, ensure_ascii=False, default=str))
 
 
 def other_ways(config) -> str:
@@ -525,7 +544,8 @@ def main(argv=None) -> int:
     add("run", "do one task and exit", text, yes,
         (("--agent",), {"default": ""}), (("-s", "--session"), {"default": ""}),
         (("-c", "--continue"), {"action": "store_true", "dest": "continue_"}),
-        (("--json",), {"action": "store_true"}), (("-f", "--file"), {"action": "append"}))
+        (("--json",), {"action": "store_true"}), (("--events",), {"action": "store_true"}),
+        (("-f", "--file"), {"action": "append"}))
     for name, help_text in (("serve", "run the server (API + web app)"), ("web", "serve and open the browser"),
                             ("app", "open the app window")):
         add(name, help_text, (("--port",), {"type": int, "default": 0}), (("--host",), {"default": ""}),

@@ -177,6 +177,26 @@ class CliTest(CliCase):
         self.assertEqual(code, 1)
         self.assertEqual(json.loads(output)["stopped"], "model error")
 
+    def test_run_events(self):
+        model = self.model([call("write", filePath="sum.py", content="print(6 * 7)\n"),
+                            call("bash", command=f'"{PYTHON}" sum.py'), say("It prints 42."), say("Still 42.")])
+        code, output, error = self.talos("run", "make", "sum.py", "--events", "--yes", model=model)
+        self.assertEqual((code, error), (0, ""))
+        lines = [json.loads(line) for line in output.splitlines()]        # every line is JSON, nothing else is printed
+        names = [line["event"] for line in lines]
+        self.assertEqual((names[0], names[-1]), ("session", "result"))
+        self.assertEqual(lines[0]["data"]["model"], "fake/script")
+        self.assertNotIn("text", names)
+        self.assertEqual([line["data"]["name"] for line in lines if line["event"] == "tool"], ["write", "bash"])
+        self.assertIn("42", [line["data"]["result"] for line in lines if line["event"] == "tool_result"][1])
+        last = lines[-1]["data"]
+        self.assertEqual((last["text"], last["stopped"], last["steps"], last["session"]),
+                         ("It prints 42.", "", 3, lines[0]["data"]["session"]))
+        self.assertEqual(last["proof"]["level"], "checked")
+        code, output, _ = self.talos("run", "-s", last["session"], "and now?", "--events", "--yes", model=model)
+        again = [json.loads(line) for line in output.splitlines()]
+        self.assertEqual((code, again[-1]["data"]["text"], again[0]["data"]["session"]), (0, "Still 42.", last["session"]))
+
     def test_info_commands(self):
         code, output, _ = self.talos("--version")
         self.assertEqual((code, output.strip()), (0, "talos " + cli.__version__))

@@ -41,6 +41,10 @@ First time: `python -m talos doctor` shows which models and tools it found on yo
 With [Ollama](https://ollama.com) running, Talos finds its models by itself. For a paid model:
 `python -m talos auth set openai YOUR_KEY`, then `python -m talos -m openai/gpt-4o-mini`.
 
+With no model and no key at all: `python -m talos -m glow/auto` uses the free AI services built
+into [Glow](https://juw12.github.io/projects/glow/) (no account). It is slow, about one model
+answer a minute, and your prompt goes to those services. See the limits below.
+
 ## What it does
 
 **Everything OpenCode does** (37 features built in, 3 through a bridge, 2 missing): terminal chat,
@@ -69,6 +73,12 @@ commands in Docker or over SSH, voice out, image generation.
 - **A guard.** Skills, memory, rule files and MCP tool descriptions are scanned for hidden
   instructions before the model sees them. A flagged skill is held back until you trust it.
 - **Budgets.** A run stops at the number of steps, tokens or money you set.
+- **A spare model.** `"fallback_model": "glow/auto"` in `talos.json`: when your model does not
+  answer (no network to it, a bad key, a server that is down), the spare one finishes the run.
+- **Free AI with no key.** `glow/auto` asks several free services in turn and leaves a busy one
+  alone for as long as it says.
+- **A run other programs can follow.** `talos run --events` prints each step as one line of JSON
+  (the tool calls, their results, the answer), for a phone page or an editor.
 - **Engines.** Hand a job to OpenCode, Hermes, Claude Code, Codex or Gemini from Talos.
 - **Tune.** `python -m talos tune` measures your models on fixed tasks and says which to use.
 - **No dependencies.** Python standard library only.
@@ -134,6 +144,13 @@ you chose, and only the parts the agent looks up.
 - Docker and SSH backends are tested with stand-in programs, not real containers or hosts.
 - The engines bridge has run a real job with OpenCode (on a Mac). Hermes, Claude Code, Codex and
   Gemini were only tested with a stand-in program.
+- The free AI (`glow/...`) depends on services that count requests per network and change their
+  limits without notice. Measured on 25 Nov 2026 from an office network: OVHcloud (the only one
+  with DeepSeek and Qwen, so `glow/deepseek` and `glow/qwen`) answered once and then refused for
+  36 days; LLM7 answered once or twice and then refused for up to a day; Pollinations answered
+  once every 45 seconds. So `glow/auto` was in practice one small model (gpt-oss-20b), slowly:
+  a real task of three steps (write a file, run it, answer) was done right and took 5 minutes
+  before Talos learned to pace its requests; two answers in a row then came 46 s apart.
 - Free models of OpenCode Zen answer only inside OpenCode. With such a model picked, Talos says
   so in one line and names the agents installed on the computer that can take the job.
 - A very small model (1 GB) follows instructions poorly. In two real runs it created the file
