@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Talos Relay</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#f6f1e7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1a1814" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Talos">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+  <button id="back" class="plain" hidden aria-label="Back to the chats">&#8249; Chats</button>
+  <h1 id="title">Talos Relay</h1>
+  <span id="where" class="where"></span>
+</header>
+
+<main id="main">
+  <section id="unlinked" hidden>
+    <h2>This phone is not linked to a computer</h2>
+    <p>On the computer, run <code>talos relay pair</code> and scan the code it shows with this phone.</p>
+    <p class="soft">Talos Relay shows the Talos chats of your computer and lets you start new ones from anywhere.
+    The page holds the key; the relay in between sees sealed text only.</p>
+  </section>
+
+  <section id="list" hidden>
+    <button id="new" class="primary wide">New chat</button>
+    <p id="notice" class="notice" hidden></p>
+    <ul id="chats" class="chats"></ul>
+    <p id="empty" class="soft" hidden>No chats yet. Start one with New chat.</p>
+    <p id="about" class="soft small"></p>
+  </section>
+
+  <section id="start" hidden>
+    <label for="folder">Folder on the computer</label>
+    <select id="folder"></select>
+    <p class="soft small">Talos reads and writes files in this folder.</p>
+  </section>
+
+  <section id="chat" hidden>
+    <p id="earlier" class="soft small" hidden></p>
+    <div id="items"></div>
+    <div id="live" class="live" hidden>
+      <div class="working"><span class="dot"></span><span id="clock">Working</span>
+        <button id="stop" class="danger small">Stop</button></div>
+      <div id="stream" class="stream"></div>
+      <div id="notes" class="soft small"></div>
+    </div>
+    <div id="ask" class="ask" hidden></div>
+    <p id="proof" class="proof" hidden></p>
+    <p id="trouble" class="notice" hidden></p>
+  </section>
+</main>
+
+<footer id="composer" hidden>
+  <textarea id="text" rows="1" placeholder="Give Talos a task" enterkeyhint="send" aria-label="Message"></textarea>
+  <button id="send" class="primary">Send</button>
+</footer>
+
+<p id="status" class="status" role="status"></p>
+<script src="app.js"></script>
+</body>
+</html>

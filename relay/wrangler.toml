@@ -1,0 +1,16 @@
+# Talos Relay: the phone page (site/) and the relay (functions/) as one Cloudflare Pages project.
+# Run these in this folder to have a relay of your own, then point Talos at it:
+#   "relay": {"url": "https://<your-project>.pages.dev"}   in ~/.talos/talos.json
+#
+#   npx wrangler d1 create talos-relay                                (put the id below)
+#   npx wrangler d1 execute talos-relay --remote --file schema.sql
+#   npx wrangler pages project create talos-relay --production-branch main
+#   npx wrangler pages deploy --branch main
+name = "talos-relay"
+pages_build_output_dir = "site"
+compatibility_date = "2025-01-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "talos-relay"
+database_id = "71c91c91-2949-4790-afce-2b646e91ec0e"

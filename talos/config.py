@@ -50,6 +50,7 @@ DEFAULTS = {
     "budget": {"steps": 60, "tokens": 0, "cost": 0},
     "backend": {"type": "local"},
     "gateway": {},
+    "relay": {},               # Talos Relay: url (your own relay), folder (new chats work here), yes
     "engines": {},
     "search": {"url": "https://html.duckduckgo.com/html/"},
     "image": {},
