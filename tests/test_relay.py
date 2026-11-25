@@ -1,7 +1,9 @@
 """Talos Relay: the cipher, the code for the phone, and a phone that reaches Talos through a relay."""
 import argparse
+import base64
 import hashlib
 import json
+import re
 import secrets
 import socket
 import threading
@@ -203,6 +205,165 @@ class RelayTest(Case):
         phone = self.start([say("done")], relay={"yes": True})
         self.assertFalse(phone.call("look")["asks_first"])
 
+    def test_a_photo_the_list_and_the_copy(self):
+        before, relay.STATE_GAP_S = relay.STATE_GAP_S, 0
+        self.closers.append(lambda: setattr(relay, "STATE_GAP_S", before))
+        phone = self.start([say("A red square.")])
+        photo = base64.b64encode(b"\xff\xd8\xff\xe0" + bytes(range(200))).decode("ascii")
+        session = phone.call("send", session="", text="", folder="", img=photo)["session"]
+        done = phone.until(session, lambda chat: not chat["running"])
+        first = done["items"][0]
+        self.assertEqual((first["role"], first["text"], done["prompts"]), ("you", "Look at this photo.", 1))
+        self.assertGreater(first["t"], time.time() - 300)
+        shown = phone.call("image", session=session, at=first["img"]["at"])
+        self.assertEqual((shown["ok"], shown["kind"], shown["data"]), (True, "image/jpeg", photo))
+        self.assertEqual(phone.call("image", session=session, at=first["img"]["at"] + 50), {"ok": False})
+        self.assertIn("could not read", phone.call("send", session="", text="x", img="bm90IGEgcGhvdG8=")["error"])
+        with self.assertRaises(ValueError):
+            self.service.photo("A" * (relay.PHOTO_CHARS + 1))
+        self.assertNotIn(photo[:60], "\n".join(self.relay.seen), "the photo crossed the relay sealed")
+
+        # the list has one row with what the chat last said; the relay keeps the same rows, sealed
+        row = phone.call("look")["chats"][0]
+        self.assertEqual((row["id"], row["running"], row["waits"], row["step"]), (session, False, False, "A red square."))
+        deadline, kept = time.time() + 30, {}
+        while time.time() < deadline and not kept.get("chats"):
+            phone.call("look")                                   # each request lets the computer go round once
+            status, text = util.http("GET", f"{self.relay.address}/c/{self.link['channel']}/state")
+            kept = relay.Line(self.link).open("state", "", text) if status == 200 else {}
+        self.assertEqual([(chat["id"], chat["title"]) for chat in kept["chats"]], [(session, row["title"])])
+        self.assertNotIn(row["title"], self.relay.states[self.link["channel"]])
+
+        # taken off the phone's list, the chat stays on the computer
+        self.assertEqual(phone.call("hide", session="nothing")["ok"], False)
+        self.assertEqual(phone.call("hide", session=session), {"ok": True, "chats": []})
+        self.assertEqual(phone.call("look")["chats"], [])
+        self.assertTrue(self.store.session(session))
+        self.assertEqual(phone.call("look", session=session)["chat"]["id"], session)
+
+    def test_one_connection_is_kept(self):
+        fake = FakeRelay()
+        self.closers.append(fake.close)
+        line = relay.Line(relay.make_link(self.config(relay={"url": fake.address})))
+        self.closers.append(line.wire.close)
+        self.assertEqual(line.put_state({"computer": "here"}), 200)
+        kept = line.wire.conn
+        self.assertIsNotNone(kept, "the connection stays open after a request")
+        self.assertEqual(line.take(0), (200, []))
+        self.assertIs(line.wire.conn, kept)
+        kept.sock.close()                                        # as when the other side hung up meanwhile
+        self.assertEqual(line.put_state({"computer": "here"}), 200)
+        self.assertIsNot(line.wire.conn, kept)
+
+        # where the kept connection cannot be made, the plain way carries the request and is used for a while
+        line.wire._connect = lambda timeout: (_ for _ in ()).throw(OSError("no tunnel here"))
+        line.wire.close()
+        self.assertEqual(line.put_state({"computer": "here"}), 200)
+        self.assertGreater(line.rest, time.time() + relay.WIRE_REST_S - 30)
+
+
+class PairCodeTest(Case):
+    def offer(self, **limits):
+        fake = FakeRelay()
+        self.closers.append(fake.close)
+        link = relay.make_link(self.config(relay={"url": fake.address}))
+        said, codes, ended = [], [], []
+        thread = threading.Thread(daemon=True, target=lambda: ended.append(
+            relay.offer_code(link, said.append, shown=codes.append, **limits)))
+        thread.start()
+        deadline = time.time() + 20
+        while not codes and time.time() < deadline:
+            time.sleep(0.02)
+        self.assertTrue(codes, said)
+        return fake, link, codes[0], thread, ended, said
+
+    def phone(self, address, code):
+        """What the page does with 4 digits (relay/site/app.js, linkByCode). Returns the link, how many
+        tries are left after a wrong code, or 'no-code'."""
+        for moment in (time.time(), time.time() - relay.ROOM_EVERY_S):
+            room = f"{address}/c/{relay.code_room(moment)}"
+            status, text = util.http("GET", room + "/state")
+            if status == 200:
+                break
+        else:
+            return "no-code"
+        theirs = int.from_bytes(relay.unb64(json.loads(text)["a"]), "big")
+        secret = 2 + secrets.randbits(256)
+        mine = relay.code_public(code, secret)
+        proof, seal = relay.code_keys(secret, theirs, theirs, mine)
+        ident = secrets.token_urlsafe(12)
+        said = json.dumps({"b": relay.b64(mine.to_bytes(256, "big")), "m": relay.b64(proof)})
+        self.assertEqual(util.http("POST", f"{room}/ask/{ident}", said, {"Content-Type": "text/plain"})[0], 200)
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            status, text = util.http("GET", f"{room}/answer/{ident}?wait=1")
+            if status == 200:
+                answer = json.loads(text)
+                if not answer["ok"]:
+                    return answer["left"]
+                return json.loads(relay.Cipher(seal).open(relay.unb64(answer["link"])).decode("utf-8"))["link"]
+        raise AssertionError("the computer did not answer the code")
+
+    def test_four_digits_link_a_phone(self):
+        fake, link, code, thread, ended, said = self.offer(valid=60, grace=0.3)
+        self.assertRegex(code, r"^[0-9]{4}$")
+        self.assertIn(f"Code for the phone: {code}", said)
+        self.assertEqual(self.phone(fake.address, f"{(int(code) + 1) % 10000:04d}"), relay.CODE_TRIES - 1)
+        self.assertEqual(self.phone(fake.address, code), relay.phone_address(link))
+        thread.join(20)
+        self.assertEqual(ended, ["linked"])
+        self.assertIn(link["channel"], fake.owners, "the phone finds the computer at the relay at once")
+        self.assertEqual([name for name in fake.owners if name.startswith("pair")], [], "the room is wiped")
+        self.assertNotIn(link["key"], json.dumps(fake.seen), "the key crossed the relay sealed")
+
+    def test_three_wrong_codes_end_it(self):
+        fake, link, code, thread, ended, said = self.offer(valid=60, grace=0.3)
+        wrong = f"{(int(code) + 7) % 10000:04d}"
+        self.assertEqual([self.phone(fake.address, wrong) for _ in range(relay.CODE_TRIES)], [2, 1, 0])
+        thread.join(20)
+        self.assertEqual(ended, ["wrong"])
+        self.assertEqual(self.phone(fake.address, code), "no-code")
+        self.assertNotIn(link["channel"], fake.owners)
+
+    def test_a_code_runs_out_and_one_computer_holds_the_room(self):
+        fake, link, code, thread, ended, said = self.offer(valid=1.5, grace=0.1)
+        other = dict(link, token=secrets.token_urlsafe(32))
+        lines = []
+        self.assertEqual(relay.offer_code(other, lines.append, valid=1, grace=-10), "taken")
+        self.assertIn("another computer", lines[0])
+        thread.join(20)
+        self.assertEqual(ended, ["expired"])
+        self.assertIn("ran out", said[-1])
+
+    def test_the_two_sides_agree(self):
+        one, two = 2 + secrets.randbits(256), 2 + secrets.randbits(256)
+        first, second = relay.code_public("0042", one), relay.code_public("0042", two)
+        self.assertEqual(relay.code_keys(one, second, first, second), relay.code_keys(two, first, first, second))
+        other = relay.code_public("0043", two)
+        self.assertNotEqual(relay.code_keys(one, other, first, other), relay.code_keys(two, first, first, other))
+        for bad in (0, 1, relay.CODE_PRIME - 1, relay.CODE_PRIME):
+            self.assertIsNone(relay.code_keys(one, bad, first, bad))
+        self.assertRegex(relay.code_room(time.time()), r"^pair[A-Za-z0-9_-]{28}$")
+        self.assertNotEqual(relay.code_room(0), relay.code_room(relay.ROOM_EVERY_S))
+
+
+class SignInStartTest(Case):
+    def test_what_starts_it_at_sign_in(self):
+        command = ["/usr/bin/python3", "/home/me/.talos/talos relay.pyw", "a&b"]
+        path, text = relay.login_entry("Darwin", command)
+        self.assertEqual(path.parts[-3:], ("Library", "LaunchAgents", "dev.talos.relay.plist"))
+        self.assertIn("<string>/home/me/.talos/talos relay.pyw</string>", text)
+        self.assertIn("<string>a&amp;b</string>", text)
+        self.assertIn("<key>RunAtLoad</key>\n  <true/>", text)
+        path, text = relay.login_entry("systemd", command)
+        self.assertEqual(path.parts[-4:], (".config", "systemd", "user", "talos-relay.service"))
+        self.assertIn('ExecStart="/usr/bin/python3" "/home/me/.talos/talos relay.pyw" "a&b"', text)
+        self.assertIn("WantedBy=default.target", text)
+        path, text = relay.login_entry("xdg", command)
+        self.assertEqual(path.parts[-3:], (".config", "autostart", "talos-relay.desktop"))
+        self.assertIn('Exec="/usr/bin/python3" "/home/me/.talos/talos relay.pyw" "a&b"', text)
+        self.assertTrue(str(path).startswith(str(self.user)), "the entry is written in this account only")
+
 
 class RelayCommandTest(CliCase):
     def run_relay(self, action, settings, **flags):
@@ -278,8 +439,22 @@ class PageTest(Case):
         for op in ("look", "send", "stop", "reply"):
             self.assertIn(f'call("{op}"', script)
             self.assertIn(f'op == "{op}"', computer)
+        for op in ("image", "hide"):
+            self.assertIn(f'call("{op}"', script)
+            self.assertIn(f'op == "{op}"', computer)
         for answer in ("once", "always", "reject"):
             self.assertIn(f'"{answer}"', script)
+        for label in ("talos-relay pair v1|", "talos-relay pair room v1|", "talos-relay pair v1 key|"):
+            self.assertIn(label, script)
+            self.assertIn(label, computer)
+        self.assertIn(f"{relay.CODE_PRIME:X}", script.replace('" +\n    "', ""), "both sides use the same group")
+        version = re.search(r'var APP_VERSION = "([0-9.]+)";', script).group(1)
+        listed = json.loads((site / "versions.json").read_text(encoding="utf-8"))["releases"]
+        self.assertEqual(listed[0]["version"], version, "the newest entry of the version history is this page")
+        self.assertEqual(page.count(f"?v={version}"), 2, "a new version reaches a phone that kept the old files")
+        self.assertIn("img-src 'self' data: blob:", (site / "_headers").read_text(encoding="utf-8"))
+        photo = int(re.search(r"PHOTO_CHARS = (\d+)", script).group(1))
+        self.assertLessEqual(photo, relay.PHOTO_CHARS, "the page sends no photo the computer refuses")
         self.assertNotIn("innerHTML", script)
         self.assertNotIn("manifest", page, "a manifest would make the Home Screen icon forget the link")
         for name in ("app.js", "styles.css", "icon.svg", "icon-180.png"):
@@ -297,7 +472,7 @@ class PageTest(Case):
         self.closers.append(fake.close)
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         for name, start in (("", b"<!doctype html>"), ("app.js", b"/* Talos Relay"), ("styles.css", b":root"),
-                            ("icon-180.png", b"\x89PNG")):
+                            ("icon-180.png", b"\x89PNG"), ("versions.json", b"{")):
             with opener.open(f"{fake.address}/{name}", timeout=20) as response:
                 self.assertEqual(response.read()[:len(start)], start, name)
 

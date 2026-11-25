@@ -115,7 +115,7 @@ ROWS = [
     ("talos", "Small models are pushed to act: code shown without a tool call gets one reminder to do the work", "native", "", "test_agent.AgentTest.test_small_model_is_pushed_to_act"),
     ("talos", "App window with its own taskbar logo, and no console windows popping up behind it", "native", "", "test_cli.NoConsoleTest.test_app_does_not_open_console_windows"),
     ("talos", "Unreadable tool calls are sent back with the reason instead of ending the run", "native", "", "test_agent.AgentTest.test_unreadable_tool_call_is_sent_back"),
-    ("talos", "Talos Relay: start, follow, answer and stop its chats from a phone page; the relay in between sees only locked text", "native", "its own page and relay (relay/); AES-256-GCM, key only in the QR code", "test_relay.RelayTest.test_phone_starts_a_chat_and_allows_a_step"),
+    ("talos", "Talos Relay: start, follow, answer and stop its chats from a phone page; the relay in between sees only locked text", "native", "its own page and relay (relay/); AES-256-GCM, key only in the QR code; several computers, a 4-digit code, photos, one list of all chats", "test_relay.RelayTest.test_phone_starts_a_chat_and_allows_a_step"),
     ("talos", "Sign in to OpenRouter in the browser: no key to copy (auth login openrouter)", "native", "", "test_relay.SignInTest.test_openrouter_sign_in"),
     ("talos", "No dependencies: Python standard library only", "native", "", "test_parity.ParityTest.test_standard_library_only"),
 ]

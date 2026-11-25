@@ -27,15 +27,15 @@ import java.io.FileOutputStream;
 import java.io.OutputStream;
 
 /**
- * Talos for Android: one full-screen window around the live web app. The page keeps its own data
- * (the WebView's storage), works offline after the first visit (its service worker), and gets what
+ * Talos for Android: one full-screen window around Talos Relay, the page that shows the Talos chats
+ * of your computers. The page keeps its own data (the WebView's storage: the computers you added), and gets what
  * a plain WebView lacks from this class: sharing, saving files, picking files, location, and links
  * to other sites opening in the browser.
  */
 public class MainActivity extends Activity {
-    private static final String START_URL = "https://juw12.github.io/talos/";
-    private static final String SCOPE = "juw12.github.io/talos";
-    private static final String SHELL_VERSION = "1.0.0";
+    private static final String START_URL = "https://talos-relay.pages.dev/";
+    private static final String SCOPE = "talos-relay.pages.dev";
+    private static final String SHELL_VERSION = "1.1.0";
     private static final int REQUEST_LOCATION = 7;
     private static final int REQUEST_FILE = 8;
 

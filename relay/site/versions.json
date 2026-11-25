@@ -1,0 +1,31 @@
+{
+  "note": "The one list of versions of the Talos Relay phone page. The page shows it under Version history.",
+  "releases": [
+    {
+      "version": "2.0.0",
+      "date": "2026-11-25",
+      "title": "The look and the parts of Vector Relay",
+      "changes": [
+        "The page now has the dark look and the layout of Vector Relay: the chat list at the side, the prompt box at the bottom, one feed per chat.",
+        "More than one computer: add a device, pick it at the top of the chat list, rename it.",
+        "A 4-digit code links a phone without a camera: on the computer run `talos relay code`.",
+        "All chats: every chat of every linked computer on one page, the running ones first, with their last steps. A row can be opened as a chat or removed from the list.",
+        "A photo can go along with a prompt. It reaches the model as an attachment, so the model must be one that reads images.",
+        "Search in the chat list, a mark on chats with something new, answers shown with headings, lists, code and tables.",
+        "A prompt that did not reach the computer stays in the feed with Try again and Remove.",
+        "The computer keeps one connection to the relay open, so a request is picked up sooner.",
+        "Talos Relay starts at sign-in on macOS and Linux as well as on Windows: `talos relay install`."
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "date": "2026-11-25",
+      "title": "Talos Relay",
+      "changes": [
+        "See the Talos chats of your computer from anywhere, start a new one, send the next prompt.",
+        "Stop a chat that is working, and answer when Talos asks before a step: allow once, always allow, or refuse.",
+        "Everything between the computer and the phone is sealed with a key only the two have."
+      ]
+    }
+  ]
+}

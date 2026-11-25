@@ -319,9 +319,8 @@ class Agent:
         model = self.model()
         self.context = config_module.context_of(self.config, model)
         self.lean = self.context < LEAN_BELOW
-        own_model, spare = self.model_name, str(self.config.get("fallback_model") or "")
-        if spare == own_model:
-            spare = ""
+        own_model = self.model_name
+        spares = [name for name in config_module.spares(self.config) if name != own_model]
         if not store.messages(self.session):
             store.add_message(self.session, {"role": "system", "content": self.system_prompt()})
             if self.lean:
@@ -355,20 +354,21 @@ class Agent:
             messages = self.compact(store.messages(self.session))
             try:
                 reply = self.llm.chat(model, messages, self.schemas(), abort=self.abort,
-                                      on_text=lambda piece: self.emit("text", piece), spare=bool(spare))
+                                      on_text=lambda piece: self.emit("text", piece), spare=bool(spares))
             except llm_module.ModelError as error:
-                other = None
-                if spare and not self.abort.is_set():
+                other, spare = None, ""
+                while spares and other is None and not self.abort.is_set():
+                    spare = spares.pop(0)
                     try:
                         other = config_module.resolve_model(self.config, spare)
                     except ValueError:
-                        other = None
+                        other = None           # a name that means nothing here: the next one in the list
                 if other is None:
                     stopped, final = "model error", str(error)
                     break
-                # the model does not answer: the spare one (fallback_model) does the rest of this run
+                # the model does not answer: the next spare one (fallback_model) carries on with this run
                 self.emit("warning", f"{error} Talos carries on with {spare}.")
-                self.model_name, model, spare = spare, other, ""
+                self.model_name, model = spare, other
                 self.context = config_module.context_of(self.config, model)
                 self.lean = self.context < LEAN_BELOW
                 steps -= 1
