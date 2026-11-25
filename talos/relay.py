@@ -471,7 +471,13 @@ def launcher() -> list:
 def at_login(change=None):
     """Windows: read (None), set (a command) or clear ('') the entry that starts Talos Relay at sign-in."""
     import winreg
-    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_READ | winreg.KEY_SET_VALUE) as key:
+    if change is None:                                    # only asking: a new Windows account has no such key yet
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_READ) as key:
+                return winreg.QueryValueEx(key, "TalosRelay")[0]
+        except FileNotFoundError:
+            return ""
+    with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_READ | winreg.KEY_SET_VALUE) as key:
         if change:
             winreg.SetValueEx(key, "TalosRelay", 0, winreg.REG_SZ, subprocess.list2cmdline(change))
         elif change == "":
