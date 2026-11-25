@@ -445,12 +445,16 @@ way only you can read:<br>{address}</p>
 
 
 def listening() -> bool:
-    """Is a `talos relay` of this computer running?"""
+    """Is a `talos relay` of this computer running? Asked by trying to take its port: connecting to it
+    instead fills the short queue of a port nobody reads, and Windows then refuses, so it looked stopped."""
+    probe = socket.socket()
     try:
-        socket.create_connection(("127.0.0.1", LOCK_PORT), 0.3).close()
-        return True
-    except OSError:
+        probe.bind(("127.0.0.1", LOCK_PORT))
         return False
+    except OSError:
+        return True
+    finally:
+        probe.close()
 
 
 def launcher() -> list:

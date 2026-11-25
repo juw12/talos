@@ -3,6 +3,7 @@ import argparse
 import hashlib
 import json
 import secrets
+import socket
 import threading
 import time
 import urllib.request
@@ -237,6 +238,22 @@ class RelayCommandTest(CliCase):
         self.assertEqual(self.run_relay("forget", settings)[0], 0)
         self.assertEqual((relay.load_link(), fake.owners), (None, {}))
         self.assertEqual(self.run_relay("dance", settings)[0], 1)
+
+    def test_a_running_relay_is_seen_every_time(self):
+        free = socket.socket()
+        free.bind(("127.0.0.1", 0))
+        port = free.getsockname()[1]
+        free.close()
+        before, relay.LOCK_PORT = relay.LOCK_PORT, port
+        self.closers.append(lambda: setattr(relay, "LOCK_PORT", before))
+        self.assertFalse(relay.listening())
+        lock = socket.socket()                                   # as `talos relay` holds it
+        lock.bind(("127.0.0.1", port))
+        lock.listen(1)
+        self.closers.append(lock.close)
+        self.assertEqual([relay.listening() for _ in range(8)], [True] * 8)
+        lock.close()
+        self.assertFalse(relay.listening())
 
     def test_the_command_is_wired(self):
         code, out, err = self.talos("relay", "status")
