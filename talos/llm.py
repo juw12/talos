@@ -352,7 +352,7 @@ class LLM:
                 if not patient and error.code in (402, 408, 429, 500, 502, 503, 504):      # 402: a free tier's limit
                     raise Busy(f"{model['name']}: {last_error}", stated_wait(error.headers, body))
                 if error.code in (408, 429, 500, 502, 503, 504):
-                    if attempt < 3:
+                    if attempt < (1 if quick else 3):      # quick: one more try, then the spare model has its turn
                         time.sleep(min(2 ** attempt, 8) * float(self.config.get("retry_wait", 1)))
                         continue
                 raise ModelError(f"{model['name']}: {last_error}")

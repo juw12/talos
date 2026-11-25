@@ -32,7 +32,7 @@ class Run:
 
     def emit(self, event, data):
         with self.changed:
-            self.events.append({"event": event, "data": data})
+            self.events.append({"event": event, "data": data, "t": time.time()})
             self.changed.notify_all()
 
     def finish(self):
@@ -73,7 +73,7 @@ class App:
             answers.put(answer)
         return bool(answers)
 
-    def start(self, session, text, model="", agent="", cwd="", source="web", auto_yes=False):
+    def start(self, session, text, model="", agent="", cwd="", source="web", auto_yes=False, attachments=None):
         """Begin answering `text`. Returns (session id, Run). Raises ValueError with a plain reason."""
         from . import repl
         info = self.store.session(session) if session else None
@@ -107,7 +107,7 @@ class App:
 
         def work():
             try:
-                run.result = runner.run(text)
+                run.result = runner.run(text, attachments)
             except Exception as error:
                 run.result = None
                 run.emit("done", {"text": f"Something went wrong: {error}", "stopped": "error", "proof": ""})

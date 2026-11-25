@@ -120,7 +120,7 @@ jobs:
           version=$(python3 -c "import json; print(json.load(open('android/app.json'))['versionName'])")
           echo "$version" > dist/Talos-android.version.txt
           if ! gh release view android --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            printf '%s\n' "Talos for Android: a full-screen window around the web app (https://juw12.github.io/talos/)." "" \
+            printf '%s\n' "Talos for Android: a full-screen window around Talos Relay (https://talos-relay.pages.dev/), the Talos chats of your computers on your phone." "" \
               "Download [Talos-android.apk](https://github.com/$GITHUB_REPOSITORY/releases/download/android/Talos-android.apk), open the file on the phone and allow \"install unknown apps\" for your browser once." \
               "It is not from a store: Android asks before it installs." > notes.md
             gh release create android dist/Talos-android.apk dist/Talos-android.apk.sha256 dist/Talos-android.version.txt \

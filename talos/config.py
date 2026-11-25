@@ -26,6 +26,10 @@ PRESETS = {
     "groq": ("https://api.groq.com/openai/v1", "GROQ_API_KEY"),
     "deepseek": ("https://api.deepseek.com/v1", "DEEPSEEK_API_KEY"),
     "mistral": ("https://api.mistral.ai/v1", "MISTRAL_API_KEY"),
+    "cerebras": ("https://api.cerebras.ai/v1", "CEREBRAS_API_KEY"),
+    "nvidia": ("https://integrate.api.nvidia.com/v1", "NVIDIA_API_KEY"),
+    "sambanova": ("https://api.sambanova.ai/v1", "SAMBANOVA_API_KEY"),
+    "github": ("https://models.github.ai/inference", "GITHUB_TOKEN"),
     "xai": ("https://api.x.ai/v1", "XAI_API_KEY"),
     "together": ("https://api.together.xyz/v1", "TOGETHER_API_KEY"),
     "opencode": ("https://opencode.ai/zen/v1", "OPENCODE_API_KEY"),
@@ -35,7 +39,8 @@ PRESETS = {
 DEFAULTS = {
     "model": "",
     "small_model": "",
-    "fallback_model": "",      # takes over for the rest of a run when the model does not answer
+    "fallback_model": "",      # takes over for the rest of a run when the model does not answer;
+                               # a list is tried in its order: ["groq/...", "glow/auto"]
     "provider": {},
     "agent": {},
     "command": {},
@@ -164,6 +169,18 @@ def load(cwd=".", overrides=None) -> dict:
     _merge(config, overrides or {})
     config["_cwd"] = str(Path(cwd).resolve())
     return config
+
+
+def spares(config: dict) -> list:
+    """The spare models in the order they are tried: fallback_model is one name or a list of names."""
+    value = config.get("fallback_model") or []
+    names = value if isinstance(value, (list, tuple)) else str(value).split(",")
+    found = []
+    for name in names:
+        name = str(name).strip()
+        if name and name not in found:
+            found.append(name)
+    return found
 
 
 def resolve_model(config: dict, name: str = "") -> dict:

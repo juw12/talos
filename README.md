@@ -19,10 +19,10 @@ Linux or Cisco Talos.)
 
 - **Windows:** [`Talos-Windows-Setup.exe`](https://github.com/juw12/talos/releases/download/desktop/Talos-Windows-Setup.exe) (no admin needed; if Windows says it protected your PC, choose *More info → Run anyway*), or without installing [`Talos-Windows-Portable.zip`](https://github.com/juw12/talos/releases/download/desktop/Talos-Windows-Portable.zip).
 - **Mac:** [`Talos-macOS-AppleSilicon.dmg`](https://github.com/juw12/talos/releases/download/desktop/Talos-macOS-AppleSilicon.dmg) (M1 and newer) or [`Talos-macOS-Intel.dmg`](https://github.com/juw12/talos/releases/download/desktop/Talos-macOS-Intel.dmg). The first time, macOS blocks it because it is not notarized: **System Settings → Privacy & Security → Open Anyway**.
-- **Android:** [`Talos-android.apk`](https://github.com/juw12/talos/releases/download/android/Talos-android.apk): open the file on the phone and allow your browser to install apps once.
-- **iPhone:** open https://juw12.github.io/talos/ in Safari, tap Share, then **Add to Home Screen**.
+- **Android:** [`Talos-android.apk`](https://github.com/juw12/talos/releases/download/android/Talos-android.apk): open the file on the phone and allow your browser to install apps once. It opens Talos Relay: the Talos chats of your computers.
+- **iPhone:** open https://talos-relay.pages.dev/ in Safari, tap Share, then **Add to Home Screen**.
 
-The Windows, Mac and Android apps open the Talos site in a window of its own ([`desktop/`](desktop/README.md), [`android/`](android/README.md)) and change with it. Talos itself is the Python program above (`python -m talos`), not these apps. Each build is opened on GitHub's machines before it is published: on Windows and on a Mac the page loads, the app starts and can store data; on an Android emulator it installs, opens and stays up. They are not code-signed or notarised, and no real phone or PC has run them yet.
+The Windows and Mac apps open the Talos site in a window of its own, the Android app opens Talos Relay ([`desktop/`](desktop/README.md), [`android/`](android/README.md)); each changes with its page. Talos itself is the Python program above (`python -m talos`), not these apps. Each build is opened on GitHub's machines before it is published: on Windows and on a Mac the page loads, the app starts and can store data; on an Android emulator it installs, opens and stays up. They are not code-signed or notarised, and no real phone or PC has run them yet.
 
 ## Open it
 
@@ -73,19 +73,26 @@ commands in Docker or over SSH, voice out, image generation.
 - **A guard.** Skills, memory, rule files and MCP tool descriptions are scanned for hidden
   instructions before the model sees them. A flagged skill is held back until you trust it.
 - **Budgets.** A run stops at the number of steps, tokens or money you set.
-- **A spare model.** `"fallback_model": "glow/auto"` in `talos.json`: when your model does not
-  answer (no network to it, a bad key, a server that is down), the spare one finishes the run.
+- **Spare models.** `"fallback_model": "glow/auto"` in `talos.json`: when your model does not
+  answer (no network to it, a bad key, a server that is down, a free limit that is used up), the
+  spare one finishes the run. A list is tried in its order:
+  `"fallback_model": ["groq/openai/gpt-oss-120b", "openrouter/openrouter/free", "glow/auto"]`.
+  While another one stands by, a busy model is asked twice and not four times.
 - **Free AI with no key.** `glow/auto` asks several free services in turn and leaves a busy one
   alone for as long as it says.
 - **A run other programs can follow.** `talos run --events` prints each step as one line of JSON
   (the tool calls, their results, the answer), for a phone page or an editor.
 - **Talos Relay: your phone.** `python -m talos relay pair` shows a QR code; scan it and the
   page https://talos-relay.pages.dev lists Talos' chats on this computer. Start a chat in a
-  folder, watch the steps, answer its questions, stop it. Before a step that can destroy work
-  or leaves the work folder, Talos asks on the phone (with `--yes` it asks nobody). The key is
-  only in the QR code and on the computer: the relay in between stores locked text it cannot
-  read. `relay install` starts it at sign-in (Windows); `relay status`, `relay forget`. To run
-  your own relay, deploy the `relay/` folder to Cloudflare Pages and set
+  folder, watch the steps, answer its questions, stop it, send a photo. Before a step that can
+  destroy work or leaves the work folder, Talos asks on the phone (with `--yes` it asks nobody).
+  The page has the dark look and the parts of Vector Relay: the chat list at the side with a
+  search box, several computers on one phone (add one with the four digits of
+  `python -m talos relay code`, or with its link), and **All chats**, one list over all of them
+  that still shows the last copy when a computer is off. The key is only in the QR code and on
+  the computer: the relay in between stores locked text it cannot read. `relay install` starts
+  it at sign-in (Windows, macOS, Linux); `relay status`, `relay forget`. To run your own relay,
+  deploy the `relay/` folder to Cloudflare Pages and set
   `"relay": {"url": "https://your-address"}` in `talos.json`.
 - **OpenRouter without copying a key.** `python -m talos auth login openrouter` opens the
   browser; press Authorize and the key is saved.
@@ -161,6 +168,19 @@ you chose, and only the parts the agent looks up.
   once every 45 seconds. So `glow/auto` was in practice one small model (gpt-oss-20b), slowly:
   a real task of three steps (write a file, run it, answer) was done right and took 5 minutes
   before Talos learned to pace its requests; two answers in a row then came 46 s apart.
+- Talos Relay was used in a real browser at phone size (Edge, 390 x 844) against a local relay:
+  new chat, chat list, an answer with a table, a permission question, a second computer added by
+  its code, All chats. It was not used on a real phone, and never on iOS. Sign-in start on macOS
+  and Linux is tested only by the files it writes. It has no mode for the local Wi-Fi without
+  the relay, and no desktop app of its own (Vector Relay has both; on a PC, open the page in a
+  browser). The Android app is checked only on an emulator: it installs, opens and stays up. A
+  photo travels slowly: the
+  lock is plain Python, about 150 KB a second on the PC where it was measured, and the model
+  must be one that reads pictures.
+- More free AI with a key of your own (`python -m talos auth set <provider> <key>`): `groq`,
+  `google`, `mistral`, `cerebras`, `nvidia`, `sambanova`, `github` and `openrouter` are known by
+  name. Only OpenRouter was run for real. Their free limits change; a company network can block
+  some of them.
 - Free models of OpenCode Zen answer only inside OpenCode. With such a model picked, Talos says
   so in one line and names the agents installed on the computer that can take the job.
 - A very small model (1 GB) follows instructions poorly. In two real runs it created the file

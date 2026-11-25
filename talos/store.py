@@ -152,6 +152,28 @@ class Store:
             return [(row["seq"], json.loads(row["body"])) for row in rows]
         return [json.loads(row["body"]) for row in rows]
 
+    def timed_messages(self, session):
+        """[(seq, when it was added, message), ...]: for a view that shows the time of each part."""
+        with self.lock:
+            rows = self.db.execute(
+                "select seq, body, created from messages where session = ? and reverted = 0 order by seq",
+                (session,),
+            ).fetchall()
+        return [(row["seq"], row["created"] or 0, json.loads(row["body"])) for row in rows]
+
+    def last_said(self, session) -> str:
+        """The newest thing the assistant said in this session, or ''."""
+        with self.lock:
+            rows = self.db.execute(
+                "select body from messages where session = ? and reverted = 0 and role = 'assistant'"
+                " order by seq desc limit 4", (session,),
+            ).fetchall()
+        for row in rows:
+            content = json.loads(row["body"]).get("content")
+            if isinstance(content, str) and content.strip():
+                return content
+        return ""
+
     def replace_messages(self, session, messages):
         """Used by compaction: swap the whole history for a shorter one."""
         with self.lock:

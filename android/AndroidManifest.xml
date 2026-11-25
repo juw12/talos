@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="io.github.juw12.talos">
     <uses-permission android:name="android.permission.INTERNET" />
     <application
-        android:label="Talos"
+        android:label="Talos Relay"
         android:icon="@mipmap/ic_launcher"
         android:theme="@style/App"
         android:allowBackup="true"

@@ -128,7 +128,7 @@ fails if a row marked native does not name an existing test.
 | Small models are pushed to act: code shown without a tool call gets one reminder to do the work | native |  | live + test: `test_agent.AgentTest.test_small_model_is_pushed_to_act` |
 | App window with its own taskbar logo, and no console windows popping up behind it | native |  | live + test: `test_cli.NoConsoleTest.test_app_does_not_open_console_windows` |
 | Unreadable tool calls are sent back with the reason instead of ending the run | native |  | test: `test_agent.AgentTest.test_unreadable_tool_call_is_sent_back` |
-| Talos Relay: start, follow, answer and stop its chats from a phone page; the relay in between sees only locked text | native | its own page and relay (relay/); AES-256-GCM, key only in the QR code | test: `test_relay.RelayTest.test_phone_starts_a_chat_and_allows_a_step` |
+| Talos Relay: start, follow, answer and stop its chats from a phone page; the relay in between sees only locked text | native | its own page and relay (relay/); AES-256-GCM, key only in the QR code; several computers, a 4-digit code, photos, one list of all chats | test: `test_relay.RelayTest.test_phone_starts_a_chat_and_allows_a_step` |
 | Sign in to OpenRouter in the browser: no key to copy (auth login openrouter) | native |  | test: `test_relay.SignInTest.test_openrouter_sign_in` |
 | No dependencies: Python standard library only | native |  | test: `test_parity.ParityTest.test_standard_library_only` |
 

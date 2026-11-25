@@ -118,6 +118,28 @@ class GlowTest(Case):
         self.assertEqual(runner.model_name, "fake/script")
         self.assertEqual(runner.run("and again").text, "the main model again")   # the next run starts with the chosen one
 
+    def test_a_list_of_spare_models_is_tried_in_its_order(self):
+        main = self.model([{"status": 401, "error": "bad key"}])
+        first = self.model([{"status": 429, "error": "the day's free requests are used"}] * 2)
+        second = self.model([say("Answered by the second spare.")])
+        settings = main.config(fallback_model=["first/script", "nothing-here/x", "second/script"], proof="off", retry_wait=0)
+        settings["provider"]["first"] = {"options": {"baseURL": first.url}}
+        settings["provider"]["second"] = {"options": {"baseURL": second.url}}
+        from talos import agent as agent_module
+        events = []
+        runner = agent_module.Agent(config_module.load(self.work, settings), self.store, auto_yes=True,
+                                    emit=lambda event, data: events.append((event, data)))
+        self.closers.append(runner.close)
+        result = runner.run("hello")
+        self.assertEqual((result.text, result.stopped), ("Answered by the second spare.", ""))
+        said = [data for event, data in events if event == "warning"]
+        self.assertTrue(any("carries on with first/script" in line for line in said), said)
+        self.assertTrue(any("carries on with second/script" in line for line in said), said)
+        # a busy spare is asked twice, not four times, while another one stands by
+        self.assertEqual((len(main.requests), len(first.requests), len(second.requests)), (1, 2, 1))
+        self.assertEqual(config_module.spares({"fallback_model": "a/b, c/d ,a/b"}), ["a/b", "c/d"])
+        self.assertEqual(config_module.spares({"fallback_model": ""}), [])
+
     def test_a_server_that_is_not_there_is_not_waited_for_when_a_spare_stands_by(self):
         spare = self.model([say("Answered by the spare.")])
         settings = {"model": "gone/m", "fallback_model": "spare/script", "retry_wait": 30, "proof": "off",

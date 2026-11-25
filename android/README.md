@@ -1,7 +1,10 @@
 # Talos for Android
 
-One full-screen window (Android's own WebView) around the web app (https://juw12.github.io/talos/): the same Talos a phone
-opens in its browser, with its own icon and no address bar. `MainActivity.java` adds what a plain WebView lacks:
+One full-screen window (Android's own WebView) around Talos Relay (https://talos-relay.pages.dev/): the same page a phone
+opens in its browser, with its own icon and no address bar. It shows the Talos chats of your computers: start one, follow
+its steps, answer its questions, stop it. A QR code scanned with the camera opens in the browser, not in this app, so add
+a computer in the app with the four digits of `python -m talos relay code` (Device, + Add device). Until version 1.1.0
+the app opened the Talos site instead. `MainActivity.java` adds what a plain WebView lacks:
 Share, saving a file to Downloads, picking a file, and links to other sites opening in the browser. Because it
 loads the live web app, every change to the site reaches the installed app on its next start; only a change to
 this folder needs a new .apk.

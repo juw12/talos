@@ -17,7 +17,7 @@ from pathlib import Path
 
 SITE = Path(__file__).resolve().parent.parent / "relay" / "site"
 KINDS = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
-         ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png"}
+         ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".json": "application/json; charset=utf-8"}
 MAX_STATE, MAX_ASK, MAX_ASKS, MAX_ANSWER = 300_000, 1_200_000, 30, 1_600_000
 CHANNEL = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
 ASK_ID = re.compile(r"^[A-Za-z0-9_-]{8,40}$")
