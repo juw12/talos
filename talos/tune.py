@@ -5,6 +5,7 @@ model can work as an agent on this PC, not how well it chats.
 """
 from __future__ import annotations
 
+import shutil
 import sys
 import tempfile
 import time
@@ -41,8 +42,8 @@ JOBS = [
 def measure(config: dict, store, model: str, report=None) -> dict:
     passed, details, started = 0, [], time.time()
     for name, prompt, files, check in JOBS:
-        with tempfile.TemporaryDirectory() as folder:
-            folder = Path(folder)
+        folder = Path(tempfile.mkdtemp(prefix="talos-tune-"))
+        try:
             for file_name, content in files.items():
                 util.write_text(folder / file_name, content)
             job_config = dict(config, _cwd=str(folder), learn="off", budget={"steps": 12, "tokens": 0, "cost": 0})
@@ -56,6 +57,10 @@ def measure(config: dict, store, model: str, report=None) -> dict:
             finally:
                 runner.close()
                 store.delete_session(runner.session)
+        finally:
+            # a program the job started may still hold the folder (Windows): a leftover temp
+            # folder is not worth losing the measurement for
+            shutil.rmtree(folder, ignore_errors=True)
         passed += good
         details.append({"job": name, "passed": good})
         if report:
