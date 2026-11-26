@@ -2,6 +2,17 @@
   "note": "The one list of versions of the Talos Relay phone page. The page shows it under Version history.",
   "releases": [
     {
+      "version": "2.2.0",
+      "date": "2026-11-26",
+      "title": "Pick the model, and chat with no computer",
+      "changes": [
+        "Below the prompt box you pick the model the next prompt goes to. A chat keeps its model until you pick another one.",
+        "New device: This phone (no computer). The phone asks a free model itself, so it answers when the computer is off. It only chats: files and steps need Talos on a computer.",
+        "On the phone alone, Glow's free AI needs no key. Under Models and keys you add a free key of OpenRouter, Groq or Cerebras, or get the keys from your computer (on it: `talos relay keys openrouter`).",
+        "Chats and keys of the phone alone stay in this browser. A prompt goes straight to the service of its model, not through the relay."
+      ]
+    },
+    {
       "version": "2.1.0",
       "date": "2026-11-25",
       "title": "Talos Relay without the relay on the internet",

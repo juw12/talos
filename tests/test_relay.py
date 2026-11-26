@@ -13,7 +13,7 @@ import time
 import urllib.request
 from pathlib import Path
 
-from talos import login, qr, relay, relay_local, util
+from talos import config as config_module, glow, login, qr, relay, relay_local, util
 from talos.fake import call, say
 from tests.base import Case
 from tests.fake_relay import FakeRelay
@@ -114,7 +114,7 @@ class Phone:
 class RelayTest(Case):
     def start(self, steps, **settings):
         self.relay = FakeRelay()
-        model = self.model(steps)
+        model = self.scripted = self.model(steps)
         settings = dict(settings, proof="off", relay=dict(settings.get("relay") or {}, url=self.relay.address))
         self.settings = self.config(model, **settings)
         self.link = relay.make_link(self.settings)
@@ -202,6 +202,36 @@ class RelayTest(Case):
         state = util.http("GET", f"{self.relay.address}/c/{self.link['channel']}/state")
         self.assertEqual(state[0], 200)
         self.assertEqual(relay.Line(self.link).open("state", "", state[1])["computer"], self.link["computer"])
+
+    def test_the_phone_picks_the_model(self):
+        phone = self.start([say("From the spare.")], fallback_model="fake/spare")
+        seen = phone.call("look")
+        self.assertEqual(seen["models"][:2], ["fake/script", "fake/spare"], "the model in use first, then the spares")
+        self.assertIn("glow/auto", seen["models"])
+        self.assertEqual(len(seen["models"]), len(set(seen["models"])))
+        refused = phone.call("send", session="", text="hello", folder="", model="nowhere/nothing")
+        self.assertIn("does not have nowhere/nothing", refused["error"])
+        self.assertEqual(self.store.sessions(), [], "a prompt for a model this computer lacks starts nothing")
+        session = phone.call("send", session="", text="hello", folder="", model="fake/spare")["session"]
+        done = phone.until(session, lambda chat: not chat["running"])
+        self.assertEqual((done["model"], done["items"][-1]["text"]), ("fake/spare", "From the spare."))
+        self.assertIn('"model": "spare"', json.dumps(self.scripted.requests[-1]))
+
+    def test_keys_for_the_phone_alone(self):
+        phone = self.start([say("not asked")])
+        settings = self.service.app.overrides
+        settings["provider"].update(openrouter={"options": {"apiKey": "sk-or-free-key"}},
+                                    groq={"options": {"apiKey": "gsk-other-place", "baseURL": "http://127.0.0.1:9/v1"}},
+                                    cerebras={"options": {"apiKey": "csk-third"}},
+                                    openai={"options": {"apiKey": "sk-paid"}})
+        self.assertEqual(phone.call("keys"), {"ok": True, "keys": {}}, "no key leaves the computer unless its owner said so")
+        settings["relay"]["phone_keys"] = ["openrouter", "groq", "openai"]
+        self.assertEqual(phone.call("keys"), {"ok": True, "keys": {"openrouter": "sk-or-free-key"}},
+                         "not a key that goes to another address, and not a service the page cannot ask")
+        settings["relay"]["phone_keys"] = "Cerebras, openrouter"
+        self.assertEqual(phone.call("keys")["keys"], {"openrouter": "sk-or-free-key", "cerebras": "csk-third"})
+        self.assertIn("clock", phone.call("keys", t=int((time.time() - 660) * 1000))["error"])
+        self.assertNotIn("sk-or-free-key", "\n".join(self.relay.seen), "the key crossed the relay sealed")
 
     def test_with_yes_it_does_not_ask(self):
         phone = self.start([say("done")], relay={"yes": True})
@@ -479,6 +509,26 @@ class RelayCommandTest(CliCase):
         self.assertIn(relay.PAIR_TITLES["local"], shown)
         self.assertIn(link["channel"], fake.owners)
 
+    def test_which_keys_a_phone_may_fetch(self):
+        settings = self.config()
+        code, shown = self.run_relay("keys", settings)
+        self.assertEqual(code, 0)
+        self.assertIn("handed no key", shown)
+        self.assertEqual(relay.phone_services(settings), [])
+        code, shown = self.run_relay("keys", settings, value="openrouter,openai")
+        self.assertEqual(code, 1)
+        self.assertIn("Not: openai", shown)
+        saved = util.home() / "talos.json"
+        util.save_json_file(saved, {"relay": {"mode": "both"}})
+        code, shown = self.run_relay("keys", settings, value="Groq,openrouter")
+        self.assertEqual(code, 0)
+        self.assertIn("openrouter, groq", shown)
+        self.assertEqual(util.load_json_file(saved), {"relay": {"mode": "both", "phone_keys": ["openrouter", "groq"]}})
+        self.assertEqual(relay.phone_services(util.load_json_file(saved)), ["openrouter", "groq"])
+        self.assertIn("openrouter, groq", self.run_relay("keys", util.load_json_file(saved))[1])
+        self.assertEqual(self.run_relay("keys", settings, value="none")[0], 0)
+        self.assertEqual(util.load_json_file(saved), {"relay": {"mode": "both", "phone_keys": []}})
+
 
 class PageTest(Case):
     """The phone page and the computer must mean the same by every word they exchange."""
@@ -493,7 +543,7 @@ class PageTest(Case):
         for op in ("look", "send", "stop", "reply"):
             self.assertIn(f'call("{op}"', script)
             self.assertIn(f'op == "{op}"', computer)
-        for op in ("image", "hide"):
+        for op in ("image", "hide", "keys"):
             self.assertIn(f'call("{op}"', script)
             self.assertIn(f'op == "{op}"', computer)
         for answer in ("once", "always", "reject"):
@@ -505,7 +555,7 @@ class PageTest(Case):
         version = re.search(r'var APP_VERSION = "([0-9.]+)";', script).group(1)
         listed = json.loads((site / "versions.json").read_text(encoding="utf-8"))["releases"]
         self.assertEqual(listed[0]["version"], version, "the newest entry of the version history is this page")
-        self.assertEqual(page.count(f"?v={version}"), 3, "a new version reaches a phone that kept the old files")
+        self.assertEqual(page.count(f"?v={version}"), 4, "a new version reaches a phone that kept the old files")
         self.assertLess(page.index("lite-crypto.js"), page.index("app.js"), "the page's own cipher is there first")
         self.assertIn("crypto.subtle) || window.TalosLiteCrypto", script, "the browser's own cipher comes first")
         self.assertIn("img-src 'self' data: blob:", (site / "_headers").read_text(encoding="utf-8"))
@@ -513,7 +563,7 @@ class PageTest(Case):
         self.assertLessEqual(photo, relay.PHOTO_CHARS, "the page sends no photo the computer refuses")
         self.assertNotIn("innerHTML", script)
         self.assertNotIn("manifest", page, "a manifest would make the Home Screen icon forget the link")
-        for name in ("app.js", "lite-crypto.js", "styles.css", "icon.svg", "icon-180.png"):
+        for name in ("app.js", "phone.js", "lite-crypto.js", "styles.css", "icon.svg", "icon-180.png"):
             self.assertIn(name, page)
             self.assertTrue((site / name).is_file(), name)
         lite = (site / "lite-crypto.js").read_text(encoding="utf-8")
@@ -523,6 +573,21 @@ class PageTest(Case):
                        if ": " in line)
         self.assertEqual(headers, relay_local.PAGE_HEADERS, "the relay inside Talos hands the page out the same way")
         self.assertIn("script-src 'self'", (site / "_headers").read_text(encoding="utf-8"))
+
+        # the part for a phone with no computer: it reaches the model services it names and nothing else
+        alone = (site / "phone.js").read_text(encoding="utf-8")
+        self.assertLess(page.index("phone.js"), page.index("app.js"))
+        self.assertNotIn("innerHTML", alone)
+        allowed = re.search(r"connect-src ([^;]+)", headers["Content-Security-Policy"]).group(1).split()
+        self.assertEqual(sorted(set(allowed) - {"'self'"}), sorted(set(re.findall(r"https://[a-z0-9.-]+", alone))),
+                         "the page may reach exactly the services phone.js asks")
+        places = dict(re.findall(r'var (\w+) = "(https://[^"]+)";', alone))
+        routes = [(family, places[place], name) for family, place, name in re.findall(r'\["(\w+)", (\w+), "([^"]+)"\]', alone)]
+        self.assertEqual(routes, [tuple(route[:3]) for route in glow.ROUTES], "the same free models as glow/... on a computer")
+        self.assertIn("var GLOW_NAMES = " + json.dumps(list(glow.NAMES)) + ";", alone)
+        for name in relay.PHONE_SERVICES:
+            self.assertIn(f'{name}: {{ name: ', alone)
+            self.assertIn(f'base: "{config_module.PRESETS[name][0]}"', alone)
         worker = (ROOT / "relay" / "functions" / "c" / "[[path]].js").read_text(encoding="utf-8")
         for path in ("/state", "asks/take", '"ask"', '"answer"', "X-Relay-Write"):
             self.assertIn(path, worker)
@@ -532,7 +597,8 @@ class PageTest(Case):
         self.closers.append(fake.close)
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         for name, start in (("", b"<!doctype html>"), ("app.js", b"/* Talos Relay"), ("styles.css", b":root"),
-                            ("lite-crypto.js", b"/* Talos Relay"), ("icon-180.png", b"\x89PNG"), ("versions.json", b"{")):
+                            ("lite-crypto.js", b"/* Talos Relay"), ("phone.js", b"/* Talos Relay"),
+                            ("icon-180.png", b"\x89PNG"), ("versions.json", b"{")):
             with opener.open(f"{fake.address}/{name}", timeout=20) as response:
                 self.assertEqual(response.read()[:len(start)], start, name)
                 self.assertIn("script-src 'self'", response.headers["Content-Security-Policy"])
@@ -553,6 +619,130 @@ class PageTest(Case):
         said, back = ran.stdout.split()
         self.assertEqual(said, "ok")
         self.assertEqual(cipher.open(bytes.fromhex(back), extra).decode("utf-8"), "from the computer \u2713, read on the phone")
+
+    def test_phone_alone_answers_by_itself(self):
+        """phone.js in Node with stand-in services: it chats, falls to the next free model, stops, keeps keys."""
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("needs Node")
+        check = self.home / "phone-check.js"
+        check.write_text(PHONE_CHECK, encoding="utf-8")
+        ran = subprocess.run([node, str(check), str(ROOT / "relay" / "site" / "phone.js")],
+                             capture_output=True, text=True, timeout=120)
+        self.assertEqual((ran.returncode, ran.stdout.strip()), (0, "ok"), ran.stderr + ran.stdout)
+
+
+PHONE_CHECK = r"""
+const kept = {}, asked = [];
+global.localStorage = { getItem: (key) => (key in kept ? kept[key] : null), setItem: (key, value) => { kept[key] = String(value); } };
+global.window = {};
+if (typeof crypto === "undefined") global.crypto = require("crypto").webcrypto;
+let mode = "second";
+const refuse = (status, words) => ({ ok: false, status: status, text: async () => JSON.stringify({ error: { message: words } }) });
+const whole = (data) => ({ ok: true, status: 200, text: async () => JSON.stringify(data), json: async () => data });
+function pieces(parts) {
+  const lines = parts.map((part) => "data: " + JSON.stringify({ choices: [{ delta: { content: part } }] }) + "\n\n").concat(["data: [DONE]\n\n"]);
+  let at = 0;
+  return { ok: true, status: 200, body: { getReader: () => ({
+    read: async () => (at < lines.length ? { done: false, value: new TextEncoder().encode(lines[at++]) } : { done: true }) }) } };
+}
+global.fetch = async (url, options) => {
+  options = options || {};
+  const body = options.body ? JSON.parse(options.body) : null;
+  asked.push({ url: url, model: body && body.model, key: (options.headers || {}).Authorization || "", messages: body && body.messages });
+  if (url.indexOf("openrouter.ai") >= 0) {
+    if (mode === "wrong key") return refuse(401, "No auth credentials found");
+    if (url.slice(-4) === "/key") return whole({ data: { label: "test" } });
+    if (url.slice(-7) === "/models") return whole({ data: [{ id: "maker/small:free" }, { id: "maker/paid" }, { id: "openrouter/free" }, { id: "maker/whisper:free" }] });
+    return whole({ choices: [{ message: { content: "From OpenRouter." } }] });
+  }
+  if (mode === "down") return refuse(500, "closed today");
+  if (mode === "hang") {
+    return new Promise((resolve, reject) => options.signal.addEventListener("abort", () => {
+      const error = new Error("aborted");
+      error.name = "AbortError";
+      reject(error);
+    }));
+  }
+  if (body.model === "DeepSeek-V4.1-Flash-1017") return refuse(429, "slow down");
+  return pieces(["Hel", "lo."]);
+};
+const check = (fine, what) => { if (!fine) throw new Error(what); };
+const rest = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+require(process.argv[2]);
+const phone = window.TalosPhone;
+phone.version = "test";
+async function until(session, ready) {
+  for (let round = 0; round < 500; round++) {
+    const seen = await phone.call("look", { session: session });
+    if (ready(seen.chat)) return seen;
+    await rest(10);
+  }
+  throw new Error("not reached");
+}
+(async () => {
+  let seen = await phone.call("look", {});
+  check(seen.ok && seen.alone && seen.chats.length === 0 && seen.chat === null, "the first look");
+  check(seen.models.join() === "glow/auto,glow/deepseek,glow/qwen" && seen.model === "glow/auto", "without a key: the free models");
+  check((await phone.call("send", { text: "  " })).error.indexOf("Type a message") === 0, "an empty prompt");
+  check((await phone.call("send", { text: "x", img: "abc" })).error, "a photo is refused");
+  check((await phone.call("send", { text: "x", model: "openrouter/openrouter/free" })).error.indexOf("does not have") > 0, "a model with no key");
+  check(asked.length === 0 && (await phone.call("look", {})).chats.length === 0, "what was refused started nothing");
+
+  // the first free model says no: the next one answers, piece by piece
+  const first = (await phone.call("send", { text: "Say hello", model: "glow/auto" })).session;
+  seen = await until(first, (chat) => !chat.running);
+  check(JSON.stringify(seen.chat.items.map((item) => [item.role, item.text])) === '[["you","Say hello"],["talos","Hello."]]', "the answer");
+  check(seen.chat.live === null && seen.chat.model === "glow/auto" && seen.chat.prompts === 1, "the chat after the answer");
+  check(asked.map((one) => one.model).join() === "DeepSeek-V4.1-Flash-1017,Qwen3.8-27B", "the order of the free models");
+  check(asked[1].url === "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions" && asked[1].key === "", "where it asked");
+  check(asked[1].messages[0].role === "system" && asked[1].messages[1].content === "Say hello", "what it sent");
+  check(seen.chats[0].id === first && seen.chats[0].step === "Hello." && seen.chats[0].title === "Say hello", "the row in the list");
+  check(JSON.parse(kept["talos-phone-chats"])[first].messages.length === 2, "the chat is kept in the browser");
+
+  // no service answers: it says which and why, and the chat keeps the prompt
+  mode = "down";
+  check((await phone.call("send", { session: first, text: "Again" })).session === first, "a second prompt in the same chat");
+  seen = await until(first, (chat) => !chat.running);
+  check(seen.chat.live.done.stopped === "model error" && seen.chat.live.done.text.indexOf("closed today") > 0, "why no answer came");
+  check(seen.chat.items.length === 3 && asked.length === 2 + 8, "every free model was tried once");
+
+  // stop ends the wait
+  mode = "hang";
+  const second = (await phone.call("send", { text: "Wait for me", model: "glow/qwen" })).session;
+  seen = await until(second, (chat) => chat.running);
+  check((await phone.call("send", { session: second, text: "more" })).error.indexOf("still working") > 0, "one answer at a time");
+  check((await phone.call("hide", { session: second })).ok === false, "a working chat is not removed");
+  check((await phone.call("stop", { session: second })).ok === true, "stop");
+  seen = await until(second, (chat) => !chat.running);
+  check(seen.chat.live.done.stopped === "you stopped it", "it says who stopped it");
+  check((await phone.call("stop", { session: "nothing" })).ok === false, "nothing to stop");
+
+  // a key: only the models of that service that cost nothing, and the key goes to that service alone
+  mode = "second";
+  check(phone.setKey("openrouter", " sk-or-test ") === true && phone.setKey("elsewhere", "x") === false, "a key is kept");
+  check(phone.names().join() === "glow/auto,glow/deepseek,glow/qwen,openrouter/openrouter/free", "before the list is read");
+  check((await phone.refresh("openrouter")) === 2, "the models that cost nothing");
+  check(phone.names().slice(3).join() === "openrouter/maker/small:free,openrouter/openrouter/free", "the list of the service");
+  const third = (await phone.call("send", { text: "With a key", model: "openrouter/maker/small:free" })).session;
+  seen = await until(third, (chat) => !chat.running);
+  const last = asked[asked.length - 1];
+  check(seen.chat.items[1].text === "From OpenRouter." && last.model === "maker/small:free", "an answer that came in one piece");
+  check(last.url === "https://openrouter.ai/api/v1/chat/completions" && last.key === "Bearer sk-or-test", "the key went along");
+  check(asked.filter((one) => one.key && one.url.indexOf("https://openrouter.ai/") !== 0).length === 0, "no other service saw the key");
+  mode = "wrong key";
+  check(await phone.refresh("openrouter").then(() => false, (error) => error.message.indexOf("the key was refused") === 0), "a wrong key");
+  check(phone.setKey("openrouter", "") === true && phone.names().length === 3 && !("openrouter" in phone.keys()), "the key is taken out");
+
+  // taken off the phone, a chat is gone
+  const left = await phone.call("hide", { session: first });
+  check(left.ok && left.chats.map((row) => row.id).sort().join() === [third, second].sort().join(), "the list after removing one");
+  check((await phone.call("look", { session: first })).gone === first, "it is gone");
+  check((await phone.call("hide", { session: first })).ok === false && (await phone.call("reply", {})).ok === false, "what only a computer has");
+  console.log("ok");
+  process.exit(0);
+})().catch((error) => { console.error(error.message); process.exit(1); });
+"""
 
 
 LITE_CHECK = r"""

@@ -18,7 +18,7 @@
 <meta name="apple-mobile-web-app-title" content="Talos Relay">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="styles.css?v=2.1.0">
+<link rel="stylesheet" href="styles.css?v=2.2.0">
 </head>
 <body>
 <aside id="side" class="side" aria-label="Chats">
@@ -46,6 +46,7 @@
   <nav id="chats" class="chats" aria-label="Chats on the computer"></nav>
   <p id="noChats" class="side-empty">No chat yet. Start one with New chat.</p>
   <p id="about" class="side-about"></p>
+  <button type="button" id="showKeys" class="versions-link" hidden>Models and keys</button>
   <button type="button" id="showVersions" class="versions-link">Version history</button>
 </aside>
 <div id="shade" class="shade" hidden></div>
@@ -70,6 +71,16 @@
     </div>
     <p id="deviceError" role="alert" hidden></p>
     <div class="device-actions"><button type="button" id="cancelDevice">Cancel</button><button type="submit" id="saveDevice">Add and switch</button></div>
+  </form>
+</dialog>
+<dialog id="keysDialog" aria-labelledby="keysTitle">
+  <form id="keysForm" autocomplete="off">
+    <h2 id="keysTitle">Models and keys</h2>
+    <p>Glow's free AI needs no key. A free key of a service adds its models to the list below the prompt box. A key stays in this browser and goes only to its own service.</p>
+    <div id="keysFields"></div>
+    <div id="keysFrom"></div>
+    <p id="keysNote" role="status" hidden></p>
+    <div class="device-actions"><button type="button" id="closeKeys">Close</button><button type="submit" id="saveKeys">Save</button></div>
   </form>
 </dialog>
 <dialog id="versionsDialog" aria-labelledby="versionsTitle">
@@ -103,6 +114,8 @@
     <p>No camera at hand? Run <strong>talos relay code</strong> instead, tap the button below and enter the 4 digits.</p>
     <p class="soft">The code holds a key that only your computer and this phone have. Everything between them travels sealed with it.</p>
     <button type="button" id="firstDevice">Add device with a code</button>
+    <p class="soft">No computer at hand? This phone can also chat by itself with free models. It only chats: it reads no files and runs no steps.</p>
+    <button type="button" id="phoneAlone">Use this phone alone</button>
   </section>
 
   <aside id="hint" class="hint" hidden>
@@ -125,6 +138,7 @@
         <button id="attach" class="attach" type="button" aria-label="Add a photo">
           <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 5.5v13M5.5 12h13" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
         </button>
+        <select id="model" class="model" aria-label="Model for the next prompt" hidden></select>
         <span id="sendTarget" class="send-target" aria-live="polite"></span>
         <button id="send" class="send" type="submit" aria-label="Send" disabled>
           <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 18.5v-13M6.5 11L12 5.5 17.5 11" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -135,7 +149,8 @@
 </div>
 
 <noscript><p class="sheet">This page needs JavaScript: it opens the sealed text from your computer on this phone.</p></noscript>
-<script src="lite-crypto.js?v=2.1.0"></script>
-<script src="app.js?v=2.1.0"></script>
+<script src="lite-crypto.js?v=2.2.0"></script>
+<script src="phone.js?v=2.2.0"></script>
+<script src="app.js?v=2.2.0"></script>
 </body>
 </html>

@@ -12,11 +12,11 @@
 "use strict";
 (function () {
   var PROTOCOL = 1;
-  var APP_VERSION = "2.1.0";
+  var APP_VERSION = "2.2.0";
   var NEW = "";                         // the chat that does not exist yet
   var DEVICES = "talos-relay-devices", ACTIVE = "talos-relay-active", OLD_LINK = "talos-relay-link";
   var VIEW = "talos-relay-view", HINT = "talos-relay-hint";
-  var BUSY_EVERY_MS = 2500, QUIET_EVERY_MS = 7000, BOARD_EVERY_MS = 20000;
+  var BUSY_EVERY_MS = 2500, QUIET_EVERY_MS = 7000, BOARD_EVERY_MS = 20000, ALONE_EVERY_MS = 500;
   var HANG_MS = 15000, ANSWER_HOLD_S = 6, ANSWER_HANG_MS = 12000, ANSWER_WAIT_MS = 20000, PHOTO_WAIT_MS = 45000;
   var PHOTO_SIDE = 1400, PHOTO_CHARS = 400000;   // the computer opens about 150,000 characters a second
   var BOARD_ENDED = 12, REMOVE_ARMED_MS = 4000;
@@ -24,6 +24,9 @@
   // Over plain http (the relay inside Talos, on your own network) a browser offers no cipher: lite-crypto.js is used.
   var subtle = (window.crypto && crypto.subtle) || window.TalosLiteCrypto;
   var DIRECT = location.protocol === "http:";       // the page comes from the computer itself, not from the internet
+  var PHONE = window.TalosPhone;                    // this phone alone, with no computer (phone.js)
+  PHONE.version = APP_VERSION;
+  function alone(device) { return !!device && device.c === PHONE.c; }
 
   // ------------------------------------------------------------ what this phone keeps
   var memory = {};
@@ -82,7 +85,7 @@
       known.k = ticket.k;                            // the newest link of a computer is the one that works
       if (alias) { known.name = alias; known.named = true; }
     } else {
-      known = { c: ticket.c, k: ticket.k, name: alias || freeName("Computer"), named: !!alias };
+      known = { c: ticket.c, k: ticket.k, name: alias || freeName(alone(ticket) ? "This phone" : "Computer"), named: !!alias || alone(ticket) };
       devices.push(known);
     }
     keepDevices();
@@ -158,6 +161,7 @@
   /* One request to a computer and its answer. Throws trouble("gone", "key", "offline", "relay" or "silent"). */
   async function call(op, fields, device, waitMs) {
     device = device || active;
+    if (alone(device)) return PHONE.call(op, fields);   // no computer and no relay: the phone answers itself
     var id = randomId(), base = roomOf(device);
     var body = await seal(device, "ask", id, Object.assign({ op: op, t: Date.now() }, fields || {}));
     var left = await reach(base + "/ask/" + id, { method: "POST", body: body, headers: { "Content-Type": "text/plain" } }, HANG_MS + (body.length > 100000 ? 30000 : 0));
@@ -176,6 +180,7 @@
 
   /* What the relay keeps of a computer that does not answer: its name, when it was heard, its chats. */
   async function lastHeard(device) {
+    if (alone(device)) return null;
     try {
       var got = await reach(roomOf(device) + "/state", {}, HANG_MS);
       if (got.status !== 200) return null;
@@ -186,7 +191,8 @@
   }
 
   // ------------------------------------------------------------ what this phone knows
-  var info = { pc: 0, computer: "", version: "", model: "", asksFirst: true, folders: [], chats: [] };
+  var info = { pc: 0, computer: "", version: "", model: "", models: [], asksFirst: true, folders: [], chats: [] };
+  var picked = {};                                   // chat id -> the model you chose for its next prompt
   var chatsData = {};                                // chat id -> the chat as the computer last sent it
   var selected = active ? store.getItem("talos-relay-chat:" + active.c) || NEW : NEW;
   var view = store.getItem(VIEW) === "board" ? "board" : "chat";
@@ -232,6 +238,7 @@
     info.computer = answer.computer || "";
     info.version = answer.version || "";
     info.model = answer.model || "";
+    info.models = Array.isArray(answer.models) ? answer.models.map(String) : [];
     info.asksFirst = answer.asks_first !== false;
     info.folders = Array.isArray(answer.folders) ? answer.folders : [];
     info.chats = Array.isArray(answer.chats) ? answer.chats : [];
@@ -386,7 +393,7 @@
     if (selected === NEW) {
       if (problem) return ["bad", problem, !dead && !!info.pc];
       if (!info.pc) return ["", "Asking " + where, false];
-      return ["ok", "New chat on " + where + (info.model ? " \u00b7 " + info.model : ""), true];
+      return ["ok", "New chat on " + where + (wantedModel() || info.model ? " \u00b7 " + (wantedModel() || info.model) : ""), true];
     }
     if (problem) return ["bad", problem, !dead && !!own && !own.running];
     if (gone) return ["bad", "That chat is no longer on " + where + ". Pick another one from the chat list.", false];
@@ -568,7 +575,9 @@
       shownPast = mark;
       made.past.textContent = "";
       if (!items.length && !waiting.length) {
-        made.past.appendChild(element("p", "empty", selected === NEW
+        made.past.appendChild(element("p", "empty", selected === NEW && alone(active)
+          ? "Type a question. The model below the prompt box answers from this phone: no computer is needed. It only chats here. Reading files and running steps need Talos on a computer (Device, + Add device)."
+          : selected === NEW
           ? "Type what the new chat should do. Talos on " + (active ? active.name : "your computer") + " starts it, and it joins the chat list. Its steps show here while it works."
             + (info.folders.length > 1 ? " Pick the folder it works in above the prompt box." : "")
           : own ? "Nothing yet. What the chat says will show here." : ""));
@@ -661,6 +670,32 @@
     });
   }
 
+  /* The model the next prompt of this chat goes to: the one you picked here, else the one the chat
+     already has, else the one you picked last on this device, else what the device uses by itself. */
+  function wantedModel() {
+    if (!info.models.length) return "";              // an older Talos does not say which models it has
+    var own = selected === NEW ? null : chatsData[selected];
+    var kept = active ? store.getItem("talos-relay-model:" + active.c) || "" : "";
+    var order = [picked[selected], own && own.model, selected === NEW ? kept : "", info.model, info.models[0]];
+    return order.filter(function (name) { return name && info.models.indexOf(name) >= 0; })[0] || "";
+  }
+
+  function modelPicker() {
+    var picker = $("model"), wanted = wantedModel(), show = view !== "board" && info.models.length > 0;
+    picker.hidden = !show;
+    var mark = show ? JSON.stringify(info.models) : "";
+    if (picker.getAttribute("data-mark") !== mark) {   // the list is not made again under a finger
+      picker.setAttribute("data-mark", mark);
+      picker.replaceChildren();
+      info.models.forEach(function (name) {
+        var option = element("option", "", name);
+        option.value = name;
+        picker.appendChild(option);
+      });
+    }
+    if (show && document.activeElement !== picker && picker.value !== wanted) picker.value = wanted;
+  }
+
   function runningCount() {
     return boardItems().filter(function (item) { return item.row.running; }).length;
   }
@@ -673,8 +708,10 @@
     $("menuNew").hidden = !Object.keys(unread).some(function (id) { return unread[id] && id !== selected; });
     $("noChats").hidden = found.length > 0;
     $("noChats").textContent = info.chats.length ? "No chat with that name." : info.pc ? "No chat yet. Start one with New chat." : "";
-    $("about").textContent = info.pc ? "Talos " + info.version + " on " + info.computer + ". Model: " + (info.model || "none set") + ". "
-      + (info.asksFirst ? "Before a step that can destroy work or leaves its folder, it asks here." : "It asks nobody before any step.") : "";
+    $("about").textContent = !info.pc ? "" : alone(active)
+      ? "Talos on this phone alone, page " + info.version + ". No computer is needed. Chats and keys stay in this browser, and a prompt goes straight to the service of its model. It only chats: files and steps need Talos on a computer."
+      : "Talos " + info.version + " on " + info.computer + ". Model: " + (info.model || "none set") + ". "
+      + (info.asksFirst ? "Before a step that can destroy work or leaves its folder, it asks here." : "It asks nobody before any step.");
     var running = runningCount();
     var mark = JSON.stringify([selected, view, running, unread, found.map(function (row) { return [row.id, row.title, since(row.updated), row.running, row.waits]; })]);
     if (mark === listed) return;                     // rows are not made again under a finger
@@ -725,6 +762,7 @@
       : own && own.running ? "Talos is working. Stop it first." : found[2] ? "Send follow-up" : "No chat to send to";
     $("newChat").classList.toggle("chosen", selected === NEW && view !== "board");
     folderPicker();
+    modelPicker();
     chips();
     renderChat();
   }
@@ -947,7 +985,7 @@
     clearTimeout(lookTimer);
     if (document.hidden || !active || dead) return;
     var own = chatsData[selected], busy = own && own.running || pending.some(function (p) { return p.state !== "failed"; });
-    lookTimer = setTimeout(look, busy ? BUSY_EVERY_MS : QUIET_EVERY_MS);
+    lookTimer = setTimeout(look, busy ? (alone(active) ? ALONE_EVERY_MS : BUSY_EVERY_MS) : QUIET_EVERY_MS);
   }
 
   async function look() {
@@ -986,6 +1024,7 @@
       var own = chatsData[prompt.chat];
       var fields = { session: prompt.chat, text: prompt.img && prompt.text === "(photo)" ? "" : prompt.text, folder: prompt.folder || "" };
       if (prompt.img) fields.img = prompt.img;
+      if (prompt.model) fields.model = prompt.model;
       var answer = await call("send", fields, active, prompt.img ? PHOTO_WAIT_MS : ANSWER_WAIT_MS);
       if (answer.error || !answer.ok) {
         prompt.state = "failed";
@@ -1209,8 +1248,15 @@
       option.value = d.c;
       picker.appendChild(option);
     });
+    if (!deviceById(PHONE.c)) {
+      var own = element("option", "", "This phone (no computer)");
+      own.value = PHONE.c;
+      picker.appendChild(own);
+    }
     picker.value = active.c;
     $("deviceControls").hidden = false;
+    $("attach").hidden = alone(active);              // a photo needs a computer
+    $("showKeys").hidden = !alone(active);
     $("sendTarget").textContent = "To: " + active.name;
     $("send").setAttribute("aria-label", "Send to " + active.name);
     boardShown = "";
@@ -1258,7 +1304,9 @@
     $("deviceError").textContent = message;
     $("deviceError").hidden = false;
   }
-  $("devicePicker").onchange = function () { switchDevice(deviceById(this.value)); };
+  function phoneDevice() { return deviceById(PHONE.c) || remember({ c: PHONE.c, k: PHONE.k }); }
+  $("devicePicker").onchange = function () { switchDevice(this.value === PHONE.c ? phoneDevice() : deviceById(this.value)); };
+  $("phoneAlone").onclick = function () { switchDevice(phoneDevice()); };
   $("addDevice").onclick = $("firstDevice").onclick = function () { editDevice(false); };
   $("renameDevice").onclick = function () { editDevice(true); };
   $("cancelDevice").onclick = function () { $("deviceDialog").close(); };
@@ -1269,7 +1317,7 @@
     event.preventDefault();
     if (linking) return;
     var name = $("deviceName").value.trim();
-    if (!name) return formError("Enter a name for this computer.");
+    if (!name) return formError("Enter a name for this device.");
     if (renaming && active) {
       if (devices.some(function (d) { return d !== active && d.name.toLowerCase() === name.toLowerCase(); })) return formError("Use a distinct name so you can tell the computers apart.");
       active.name = name;
@@ -1324,6 +1372,82 @@
     problem = "";
     look();
   });
+
+  // ------------------------------------------------------------ the phone alone: its models and keys
+  function keysNote(lines) {
+    $("keysNote").textContent = lines.join("\n");
+    $("keysNote").hidden = !lines.length;
+  }
+  /* The models of every service that has a key, asked from the service itself. Returns one line for each. */
+  async function listModels() {
+    var lines = [];
+    await Promise.all(Object.keys(PHONE.services).map(async function (service) {
+      if (!PHONE.keys()[service]) return;
+      try {
+        var count = await PHONE.refresh(service);
+        lines.push(PHONE.services[service].name + ": " + count + (count === 1 ? " model" : " models") + (PHONE.services[service].only ? " that cost nothing" : ""));
+      } catch (error) {
+        lines.push(PHONE.services[service].name + ": " + (error && error.name === "TypeError" ? "this phone could not reach it" : error.message));
+      }
+    }));
+    return lines.sort();
+  }
+  function showKeys() {
+    var fields = $("keysFields"), from = $("keysFrom");
+    fields.replaceChildren();
+    Object.keys(PHONE.services).forEach(function (service) {
+      var kit = PHONE.services[service], label = element("label", "", kit.name + " key (free at " + kit.where + ")");
+      var input = element("input");
+      input.type = "password";
+      input.id = "key-" + service;
+      input.autocomplete = "off";
+      input.autocapitalize = "none";
+      input.spellcheck = false;
+      input.placeholder = "No key: its models are not listed";
+      input.value = PHONE.keys()[service] || "";
+      label.htmlFor = input.id;
+      fields.appendChild(label);
+      fields.appendChild(input);
+    });
+    from.replaceChildren();
+    devices.filter(function (device) { return !alone(device); }).forEach(function (device) {
+      from.appendChild(button("other-way", "Get the keys from " + device.name, async function () {
+        keysNote(["Asking " + device.name + "\u2026"]);
+        try {
+          var answer = await call("keys", {}, device, 15000);
+          var given = answer && answer.keys || {}, got = Object.keys(given).filter(function (service) { return PHONE.services[service]; });
+          if (answer.error) return keysNote([answer.error]);
+          if (!got.length) return keysNote([device.name + " hands out no key. On it, run: talos relay keys openrouter   (or the services you use), then try again."]);
+          got.forEach(function (service) { PHONE.setKey(service, given[service]); $("key-" + service).value = given[service]; });
+          keysNote(["Asking the services for their models\u2026"]);
+          keysNote(await listModels());
+          look();
+        } catch (error) {
+          keysNote([error.kind === "silent" ? device.name + " does not answer. Is it on, and is  talos relay  running on it?"
+            : error.kind === "offline" ? "This phone has no connection." : "The link of " + device.name + " no longer works."]);
+        }
+      }));
+    });
+    keysNote([]);
+    $("keysDialog").showModal();
+  }
+  $("showKeys").onclick = showKeys;
+  $("closeKeys").onclick = function () { $("keysDialog").close(); };
+  $("keysForm").onsubmit = async function (event) {
+    event.preventDefault();
+    Object.keys(PHONE.services).forEach(function (service) { PHONE.setKey(service, $("key-" + service).value); });
+    $("saveKeys").disabled = true;
+    keysNote(["Asking the services for their models\u2026"]);
+    var lines = await listModels();
+    $("saveKeys").disabled = false;
+    keysNote(lines.length ? lines : ["No key is saved. Glow's free AI answers without one."]);
+    look();
+  };
+  $("model").onchange = function () {
+    picked[selected] = this.value;
+    if (active) store.setItem("talos-relay-model:" + active.c, this.value);
+    render();
+  };
 
   // ------------------------------------------------------------ version history
   /* The list lives in versions.json, the one place versions are written down. */
@@ -1412,7 +1536,8 @@
     var text = box.value.trim();
     if ((!text && !photo) || $("send").disabled) return;
     var prompt = { pid: randomId(), text: text || "(photo)", t: Math.floor(Date.now() / 1000), chat: selected, state: "sending",
-                   folder: selected === NEW ? folder : "" };
+                   folder: selected === NEW ? folder : "", model: wantedModel() };
+    delete picked[NEW];                              // the next new chat starts from the model you use most
     if (photo) { prompt.img = photo.data; prompt.url = photo.url; }
     pending.push(prompt);
     box.value = "";

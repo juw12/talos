@@ -553,7 +553,7 @@ def main(argv=None) -> int:
     add("gateway", "answer on Telegram, Discord, Slack and the other chat platforms")
     add("relay", "your Talos chats on your phone, from anywhere (Talos Relay)",
         (("action",), {"nargs": "?", "default": "run"}),
-        (("value",), {"nargs": "?", "default": "", "help": "mode: relay, local or both"}), yes,
+        (("value",), {"nargs": "?", "default": "", "help": "mode: relay, local or both. keys: openrouter,groq,cerebras or none"}), yes,
         (("--new",), {"action": "store_true", "help": "pair: make a new link; the old phones stop working"}),
         (("--text",), {"action": "store_true", "help": "pair: show the code in the terminal"}))
     add("cron", "scheduled jobs", (("action",), {"nargs": "?", "default": "list"}),
