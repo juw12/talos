@@ -58,6 +58,9 @@ CODE_VALID_S = 5 * 60       # a 4-digit code links a phone this long
 CODE_TRIES = 3              # ... and takes this many answers; then it is dead, right or wrong
 CODE_GRACE_S = 15           # the phone gets this long to fetch the last answer before the room is wiped
 ROOM_EVERY_S = 5 * 60       # the room where a code is used gets a new name this often
+MODELS_FRESH_S = 30         # the list of models the phone picks from is read again this often
+MODELS_LISTED = 60          # models the phone is shown
+PHONE_SERVICES = ("openrouter", "groq", "cerebras")   # services the phone page can ask with no computer
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
 
@@ -209,6 +212,13 @@ def mode_of(config: dict) -> str:
     """relay: the service on the internet. local: the relay inside Talos. both: the two at once."""
     mode = str((config.get("relay") or {}).get("mode") or "relay").strip().lower()
     return mode if mode in MODES else "relay"
+
+
+def phone_services(config: dict) -> list:
+    """The services whose key a linked phone may fetch, to chat with no computer (relay.phone_keys; none if unset)."""
+    value = (config.get("relay") or {}).get("phone_keys") or []
+    named = [str(name).strip().lower() for name in (value if isinstance(value, (list, tuple)) else str(value).split(","))]
+    return [name for name in PHONE_SERVICES if name in named]
 
 
 def local_port(config: dict) -> int:
@@ -422,10 +432,42 @@ class Relay:
         self.config, self.store, self.link, self.line = config, store, link, Line(link)
         self.auto_yes, self.show = bool(auto_yes or (config.get("relay") or {}).get("yes")), show
         self.folder = str(Path((config.get("relay") or {}).get("folder") or self.app.cwd).expanduser().resolve())
-        self.seen, self.said, self.told = {}, {}, ("", 0.0)
+        self.seen, self.said, self.told, self.listed = {}, {}, ("", 0.0), (0.0, [])
         self.busy = threading.Lock()                  # one request at a time, also with two relays (mode both)
 
     # ------------------------------------------------------------ views
+    def fresh(self) -> dict:
+        """The settings as they are now: a model or a key added while this runs is seen."""
+        try:
+            return config_module.load(self.folder, self.app.overrides)
+        except (OSError, ValueError):
+            return self.config
+
+    def models(self) -> list:
+        """What the phone picks from: the model in use, the spares, then every other model this computer knows."""
+        when, names = self.listed
+        if not names or time.time() - when > MODELS_FRESH_S:
+            config, names = self.fresh(), []
+            for name in ([config_module.pick_default_model(config)] + config_module.spares(config)
+                         + config_module.list_models(config)):
+                if name and name not in names:
+                    names.append(name)
+            names = names[:MODELS_LISTED]
+            self.listed = (time.time(), names)
+        return list(names)
+
+    def phone_keys(self) -> dict:
+        """The keys the owner lets a linked phone fetch. Only a key that goes to the service's own address."""
+        config, found = self.fresh(), {}
+        for name in phone_services(config):
+            try:
+                model = config_module.resolve_model(config, f"{name}/any")
+            except ValueError:
+                continue
+            if model["api_key"] and model["base_url"] == config_module.PRESETS[name][0].rstrip("/"):
+                found[name] = model["api_key"]
+        return found
+
     def folders(self) -> list:
         found = [self.folder]
         for item in self.store.sessions(60):
@@ -504,7 +546,8 @@ class Relay:
 
     def look(self, session: str = "") -> dict:
         answer = {"ok": True, "protocol": PROTOCOL, "version": __version__, "computer": self.link.get("computer", ""),
-                  "model": config_module.pick_default_model(self.config), "asks_first": not self.auto_yes,
+                  "model": config_module.pick_default_model(self.config), "models": self.models(),
+                  "asks_first": not self.auto_yes,
                   "folders": self.folders(), "chats": self.chats(), "chat": None, "pc": int(time.time())}
         info = self.store.session(session) if session else None
         if info:
@@ -563,13 +606,17 @@ class Relay:
                 return {"ok": False}
         if op == "send":
             text, folder = str(ask.get("text") or "").strip(), str(ask.get("folder") or "")
+            model = str(ask.get("model") or "")
+            if model and model not in self.models():
+                return {"error": f"This computer does not have {model}. Pick another model."}
             try:
                 attachments = [self.photo(ask.get("img"))] if ask.get("img") else None
                 if not text and attachments:
                     text = "Look at this photo."
                 if not text:
                     return {"error": "Type a message first."}
-                started, run = self.app.start(session, text, cwd=folder if folder in self.folders() else self.folder,
+                started, run = self.app.start(session, text, model=model,
+                                              cwd=folder if folder in self.folders() else self.folder,
                                               source="relay", auto_yes=self.auto_yes, attachments=attachments)
             except ValueError as error:
                 return {"error": str(error)}
@@ -592,6 +639,8 @@ class Relay:
             return {"ok": bool(run)}
         if op == "reply":
             return {"ok": self.app.reply(str(ask.get("id")), ask.get("answer"))}
+        if op == "keys":                                  # for the phone alone; nothing unless the owner named it
+            return {"ok": True, "keys": self.phone_keys()}
         return {"error": "The Talos on the computer is older than this page and does not know that request. "
                          "Update it: talos upgrade."}
 
@@ -628,6 +677,13 @@ class Relay:
                 if failures == 3 and told != "down":
                     told = "down"
                     self.show(f"Talos Relay cannot reach {line.link['url']} ({error}). It keeps trying.")
+                stop.wait(min(60, 2 ** failures))
+                continue
+            except Exception as error:                    # say, a busy chat store: it must not end the service
+                failures += 1
+                if told != "problem":
+                    told = "problem"
+                    self.show(f"Talos Relay met a problem ({type(error).__name__}: {error}). It keeps trying.")
                 stop.wait(min(60, 2 ** failures))
                 continue
             if told == "down":
@@ -850,10 +906,19 @@ def launcher() -> list:
     workspace = Path(os.environ.get("TALOS_WORKSPACE") or util.user_home() / "Talos")
     workspace.mkdir(parents=True, exist_ok=True)
     script = util.home() / "talos-relay.pyw"
-    util.write_text(script, "import os, sys\n"
-                    f"sys.path.insert(0, {str(Path(__file__).resolve().parent.parent)!r})\n"
-                    f"os.chdir({str(workspace)!r})\n"
-                    "from talos.cli import main\nmain(['relay'])\n")
+    util.write_text(script, "import os, sys, time\n"                # no window: what it says goes to a file
+                    f"log = {str(util.home() / 'relay.log')!r}\n"
+                    "if os.path.exists(log) and os.path.getsize(log) > 200000:\n"
+                    "    os.replace(log, log + '.old')\n"
+                    "sys.stdout = sys.stderr = open(log, 'a', buffering=1, encoding='utf-8', errors='replace')\n"
+                    "print(time.strftime('%Y-%m-%d %H:%M:%S'), 'started')\n"
+                    "try:\n"
+                    f"    sys.path.insert(0, {str(Path(__file__).resolve().parent.parent)!r})\n"
+                    f"    os.chdir({str(workspace)!r})\n"
+                    "    from talos.cli import main\n"
+                    "    main(['relay'])\n"
+                    "finally:\n"
+                    "    print(time.strftime('%Y-%m-%d %H:%M:%S'), 'ended', repr(sys.exc_info()[1] or ''))\n")
     windowless = Path(sys.executable).with_name("pythonw.exe")
     return [str(windowless if windowless.is_file() else sys.executable), str(script)]
 
@@ -982,6 +1047,31 @@ def command(args, config, store, out, overrides=None) -> int:
             out("The phone needs the address of this computer: talos relay pair"
                 + ("\n" + FIREWALL if os.name == "nt" else ""))
         return 0
+    if action == "keys":
+        wanted = str(getattr(args, "value", "") or "").strip().lower()
+        if not wanted:
+            names = phone_services(config)
+            out(f"A linked phone can fetch the key of: {', '.join(names)}." if names
+                else "A linked phone is handed no key.")
+            out(f"Change it: talos relay keys {','.join(PHONE_SERVICES)}   (any of them; none: hand out no key)")
+            return 0
+        names = [] if wanted == "none" else [name.strip() for name in wanted.split(",") if name.strip()]
+        unknown = [name for name in names if name not in PHONE_SERVICES]
+        if unknown:
+            out(f"The phone page can ask these services by itself: {', '.join(PHONE_SERVICES)}. "
+                f"Not: {', '.join(unknown)}.")
+            return 1
+        path = util.home() / "talos.json"
+        data = util.load_json_file(path, {}) or {}
+        kept = data.get("relay") if isinstance(data.get("relay"), dict) else {}
+        data["relay"] = dict(kept, phone_keys=[name for name in PHONE_SERVICES if name in names])
+        util.save_json_file(path, data)
+        out((f"A linked phone can fetch the key of: {', '.join(data['relay']['phone_keys'])}. " if names
+             else "A linked phone is handed no key. ") + f"Saved in {path}")
+        if names:
+            out("On the phone: Device, This phone (no computer), Models and keys, Get the keys. A key that was "
+                "fetched stays in that phone until it is taken out there.")
+        return 0
     if action == "status":
         if not link:
             out("No phone is linked. Link one: talos relay pair")
@@ -1081,6 +1171,8 @@ def command(args, config, store, out, overrides=None) -> int:
             "talos relay code       show 4 digits that link a phone instead (good for 5 minutes)\n"
             "talos relay mode       relay: through the internet, from anywhere. local: the same network, with\n"
             "                       nothing on the internet. both. (talos relay mode local)\n"
+            "talos relay keys       which free keys a linked phone may fetch, to chat with no computer\n"
+            "                       (talos relay keys openrouter; none)\n"
             "talos relay status     is a phone linked, is it running, which mode\n"
             "talos relay install    start at every sign-in; remove: stop doing so\n"
             "talos relay forget     unlink every phone")

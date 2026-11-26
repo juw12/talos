@@ -102,6 +102,15 @@ commands in Docker or over SSH, voice out, image generation.
   same key as before, and only the computer itself can make a channel. On Windows the firewall
   asks once whether Python may be reached on private networks. `"relay": {"port": 4749, "host":
   "0.0.0.0"}` in `talos.json` change where it listens.
+- **Talos Relay: pick the model, and chat with no computer.** Below the prompt box the page lists
+  the models of the computer (the one in use, the spares, the rest); the next prompt of that chat
+  goes to the one you pick. The device **This phone (no computer)** needs no Talos at all: the page
+  asks a free model itself (`glow/auto`, `glow/deepseek`, `glow/qwen`, no key), and with a free key
+  of OpenRouter, Groq or Cerebras (Models and keys) also the models of that service that cost
+  nothing. `python -m talos relay keys openrouter` lets a linked phone fetch that key from the
+  computer with one tap (default: no key is handed out; `relay keys none`). The phone alone only
+  chats: no files, no steps, no photos. Its prompts go straight to the service of the model, not
+  through the relay and not sealed with the link key, and its chats and keys stay in that browser.
 - **OpenRouter without copying a key.** `python -m talos auth login openrouter` opens the
   browser; press Authorize and the key is saved.
 - **Engines.** Hand a job to OpenCode, Hermes, Claude Code, Codex or Gemini from Talos.
@@ -189,6 +198,12 @@ you chose, and only the parts the agent looks up.
   photo travels slowly: the
   lock is plain Python, about 150 KB a second on the PC where it was measured, and the model
   must be one that reads pictures.
+- The model picker and **This phone (no computer)** were used in Edge at phone size (390 x 844,
+  headless) on 2026-11-26: the list of a computer's models, a prompt answered by a real free model
+  with no computer (5 s; the first service said 429 and the next one answered), the key dialog, a
+  computer that hands out no key, and a real OpenRouter key (12 free models listed; the prompt
+  itself was refused because the free requests of that day were used up, and the page said so).
+  Groq and Cerebras were not tried with a key. Not used on a real phone, and never on iOS.
 - More free AI with a key of your own (`python -m talos auth set <provider> <key>`): `groq`,
   `google`, `mistral`, `cerebras`, `nvidia`, `sambanova`, `github` and `openrouter` are known by
   name. Only OpenRouter was run for real. Their free limits change; a company network can block

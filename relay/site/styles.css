@@ -56,7 +56,7 @@ button, input, textarea { font: inherit; }
 .device-controls label, #deviceDialog label { display: block; margin-bottom: 5px; color: var(--dim); font-size: 13px; }
 .device-controls select, #deviceDialog input { width: 100%; padding: 10px; border: 1px solid var(--edge); border-radius: 9px; background: var(--card); color: var(--ink); font: inherit; }
 .device-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.device-actions button, #firstDevice { min-height: 48px; padding: 4px 8px; border: 0; border-radius: 7px; background: transparent; color: var(--link); cursor: pointer; }
+.device-actions button, #firstDevice, #phoneAlone { min-height: 48px; padding: 4px 8px; border: 0; border-radius: 7px; background: transparent; color: var(--link); cursor: pointer; }
 .send-target { min-width: 0; overflow: hidden; margin: 0 9px; color: var(--dim); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 #deviceDialog { width: min(90vw, 380px); max-height: 88dvh; overflow-y: auto; padding: 20px; border: 1px solid var(--edge); border-radius: 14px; background: var(--card); color: var(--ink); }
 #deviceDialog::backdrop { background: rgba(0, 0, 0, .65); }
@@ -606,3 +606,17 @@ body.on-board .feed, body.on-board .composer, body.on-board .preview, body.on-bo
 .more:disabled { opacity: 0.5; }
 .more:focus-visible, .work-stop:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 .side-about { margin: 0 12px; color: var(--soft); font-size: 12.5px; }
+/* the model of the next prompt */
+.composer .model { flex: 0 1 auto; min-width: 0; max-width: 52%; height: 36px; margin-left: 8px; padding: 0 8px; border: 1px solid var(--edge); border-radius: 999px; background: var(--card); color: var(--dim); font: inherit; font-size: 13px; text-overflow: ellipsis; }
+.composer .model[hidden], .composer .attach[hidden] { display: none; }
+.composer .model:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+/* the phone alone: its models and keys */
+#keysDialog { width: min(90vw, 380px); max-height: 88dvh; overflow-y: auto; padding: 20px; border: 1px solid var(--edge); border-radius: 14px; background: var(--card); color: var(--ink); }
+#keysDialog::backdrop { background: rgba(0, 0, 0, .65); }
+#keysDialog h2 { margin: 0 0 14px; font-size: 19px; }
+#keysDialog label { display: block; margin: 12px 0 5px; color: var(--dim); font-size: 13px; }
+#keysDialog input { width: 100%; padding: 10px; border: 1px solid var(--edge); border-radius: 9px; background: var(--card); color: var(--ink); font: inherit; }
+#keysDialog p { color: var(--dim); font-size: 14px; }
+#keysDialog #keysNote { color: var(--ink); white-space: pre-line; }
+#keysDialog .other-way { display: block; min-height: 42px; margin-top: 8px; padding: 4px 0; border: 0; background: transparent; color: var(--link); font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
+#keysDialog .device-actions { margin-top: 10px; }

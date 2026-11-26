@@ -30,7 +30,10 @@ KINDS = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=u
          ".json": "application/json; charset=utf-8"}
 # the same as relay/site/_headers (tests/test_relay.py keeps the two equal)
 PAGE_HEADERS = {
-    "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; "
+    "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; "
+                               "connect-src 'self' https://openrouter.ai https://api.groq.com https://api.cerebras.ai "
+                               "https://oai.endpoints.kepler.ai.cloud.ovh.net https://api.llm7.io "
+                               "https://text.pollinations.ai; "
                                "img-src 'self' data: blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
     "Referrer-Policy": "no-referrer",
     "X-Content-Type-Options": "nosniff",
