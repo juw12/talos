@@ -679,6 +679,13 @@ class Relay:
                     self.show(f"Talos Relay cannot reach {line.link['url']} ({error}). It keeps trying.")
                 stop.wait(min(60, 2 ** failures))
                 continue
+            except Exception as error:                    # say, a busy chat store: it must not end the service
+                failures += 1
+                if told != "problem":
+                    told = "problem"
+                    self.show(f"Talos Relay met a problem ({type(error).__name__}: {error}). It keeps trying.")
+                stop.wait(min(60, 2 ** failures))
+                continue
             if told == "down":
                 self.show(f"Talos Relay reaches {line.link['url']} again.")
             told, failures = "", 0
@@ -899,10 +906,19 @@ def launcher() -> list:
     workspace = Path(os.environ.get("TALOS_WORKSPACE") or util.user_home() / "Talos")
     workspace.mkdir(parents=True, exist_ok=True)
     script = util.home() / "talos-relay.pyw"
-    util.write_text(script, "import os, sys\n"
-                    f"sys.path.insert(0, {str(Path(__file__).resolve().parent.parent)!r})\n"
-                    f"os.chdir({str(workspace)!r})\n"
-                    "from talos.cli import main\nmain(['relay'])\n")
+    util.write_text(script, "import os, sys, time\n"                # no window: what it says goes to a file
+                    f"log = {str(util.home() / 'relay.log')!r}\n"
+                    "if os.path.exists(log) and os.path.getsize(log) > 200000:\n"
+                    "    os.replace(log, log + '.old')\n"
+                    "sys.stdout = sys.stderr = open(log, 'a', buffering=1, encoding='utf-8', errors='replace')\n"
+                    "print(time.strftime('%Y-%m-%d %H:%M:%S'), 'started')\n"
+                    "try:\n"
+                    f"    sys.path.insert(0, {str(Path(__file__).resolve().parent.parent)!r})\n"
+                    f"    os.chdir({str(workspace)!r})\n"
+                    "    from talos.cli import main\n"
+                    "    main(['relay'])\n"
+                    "finally:\n"
+                    "    print(time.strftime('%Y-%m-%d %H:%M:%S'), 'ended', repr(sys.exc_info()[1] or ''))\n")
     windowless = Path(sys.executable).with_name("pythonw.exe")
     return [str(windowless if windowless.is_file() else sys.executable), str(script)]
 

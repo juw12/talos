@@ -233,6 +233,22 @@ class RelayTest(Case):
         self.assertIn("clock", phone.call("keys", t=int((time.time() - 660) * 1000))["error"])
         self.assertNotIn("sk-or-free-key", "\n".join(self.relay.seen), "the key crossed the relay sealed")
 
+    def test_an_unexpected_error_does_not_end_it(self):
+        phone = self.start([say("not asked")])
+        self.assertTrue(phone.call("look")["ok"])
+        real, failed = self.service.line.take, []
+
+        def take(*args):
+            if not failed:
+                failed.append(True)
+                raise RuntimeError("the chat store is busy")
+            return real(*args)
+
+        self.service.line.take = take
+        self.assertTrue(phone.call("look", wait=40)["ok"], "the next round answers the phone")
+        self.assertEqual(failed, [True])
+        self.assertIn("RuntimeError: the chat store is busy", "\n".join(self.notes))
+
     def test_with_yes_it_does_not_ask(self):
         phone = self.start([say("done")], relay={"yes": True})
         self.assertFalse(phone.call("look")["asks_first"])
@@ -395,6 +411,12 @@ class SignInStartTest(Case):
         self.assertEqual(path.parts[-3:], (".config", "autostart", "talos-relay.desktop"))
         self.assertIn('Exec="/usr/bin/python3" "/home/me/.talos/talos relay.pyw" "a&b"', text)
         self.assertTrue(str(path).startswith(str(self.user)), "the entry is written in this account only")
+
+        # started with no window, it writes what it says and why it ended into a file
+        script = Path(relay.launcher()[-1]).read_text(encoding="utf-8")
+        compile(script, "talos-relay.pyw", "exec")
+        self.assertIn(repr(str(util.home() / "relay.log")), script)
+        self.assertIn("main(['relay'])", script)
 
 
 class RelayCommandTest(CliCase):
